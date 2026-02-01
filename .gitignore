@@ -1,0 +1,8 @@
+# Python junk
+__pycache__/
+*.pyc
+.env
+.venv
+.venv/
+# Mac junk
+.DS_Store
