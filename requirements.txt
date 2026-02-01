@@ -1,9 +1,25 @@
+# User Interface
 streamlit
+
+# LangChain Framework
 langchain
 langchain-community
+langchain-core
+langchain-text-splitters
+
+# AI Models & APIs
 langchain-groq
 langchain-huggingface
-sentence-transformers
+huggingface-hub
+
+# Vector Database
+langchain-chroma
 chromadb
+
+# Document Loading
 pypdf
+
+# Utilities
 python-dotenv
+tiktoken
+sentence-transformers
