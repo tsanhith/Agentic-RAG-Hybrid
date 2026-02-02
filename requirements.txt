@@ -1,25 +1,23 @@
-# User Interface
-streamlit
+# --- USER INTERFACE ---
+streamlit                   # The web app framework (Sidebars, Chat bubbles, Buttons)
 
-# LangChain Framework
-langchain
-langchain-community
-langchain-core
-langchain-text-splitters
+# --- AI BRAIN & APIs ---
+langchain                   # The main framework connecting everything
+langchain-core              # Core logic for Chains and Prompts
+langchain-community         # Community tools (needed for specific loaders)
+langchain-groq              # Connects to Groq API (Llama-3 Model)
+tavily-python               # Connects to Tavily API (Web Search)
 
-# AI Models & APIs
-langchain-groq
-langchain-huggingface
-huggingface-hub
+# --- MEMORY & DATABASE (RAG) ---
+faiss-cpu                   # The Vector Database (Stores your PDF chunks)
+langchain-huggingface       # Connects to HuggingFace (for Embeddings)
+sentence-transformers       # The actual AI model that turns text into numbers (Embeddings)
 
-# Vector Database
-langchain-chroma
-chromadb
+# --- DOCUMENT PROCESSING ---
+pymupdf                     # Reads PDF files very fast
+langchain-text-splitters    # Cuts long PDFs into small "chunks"
 
-# Document Loading
-pypdf
-
-# Utilities
-python-dotenv
-tiktoken
-sentence-transformers
+# --- UTILITIES ---
+python-dotenv               # Reads the .env file (for API keys)
+tiktoken                    # Counts tokens (helper for AI models)
+huggingface-hub             # Downloads models from HuggingFace
