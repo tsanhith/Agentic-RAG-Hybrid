@@ -1,152 +1,111 @@
 import streamlit as st
 import os
 import tempfile
-from dotenv import load_dotenv
 
-# Import our Modular Backend & Frontend
 from src.ui.layout import setup_page
-from src.ui.visuals import render_sidebar_stats, render_comparison_chart
+from src.ui.visuals import render_sidebar_stats, render_comparison_chart, render_source_badges
 from src.core.memory import MemoryManager
 from src.core.processing import DocumentProcessor
 from src.core.agent import AgentBrain
 
-# 1. SETUP
-load_dotenv()
-setup_page()
+# 1. Setup
+uploaded_files, groq_api_key, tavily_api_key, retrieval_k, chunk_size = setup_page()
 
-# 2. SIDEBAR: Configuration
-with st.sidebar:
-    st.header("⚙️ Configuration")
+if not groq_api_key:
+    st.info("👋 Welcome! Please enter your **Groq API Key** in the sidebar to begin.")
+    st.stop()
+
+# 2. State Init
+if "memory_manager" not in st.session_state: st.session_state.memory_manager = MemoryManager()
+if "messages" not in st.session_state: st.session_state.messages = []
+if "processed_state" not in st.session_state: st.session_state.processed_state = None
+
+# --- HOT RELOAD FIX ---
+# Check if Agent exists. If NOT, create it.
+# If it DOES exist, check if the API keys have changed. If so, recreate it.
+force_reinit = False
+if "agent" in st.session_state:
+    # Check if the existing agent has the current Tavily Key
+    current_agent_has_tavily = st.session_state.agent.tavily is not None
+    user_provided_tavily = bool(tavily_api_key)
     
-    # A. API Keys
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if not groq_api_key:
-        groq_api_key = st.text_input("Groq API Key (Required)", type="password")
+    # If user provided a key but agent doesn't have it -> REINIT
+    if user_provided_tavily and not current_agent_has_tavily:
+        force_reinit = True
 
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
-    # If env var is missing, let user input it
-    if not tavily_api_key:
-        tavily_api_key = st.text_input(
-            "Tavily API Key (Optional)", 
-            type="password", 
-            help="Paste a key to unlock Web Search. Leave empty for Document-Only mode."
-        )
-        
-    if not groq_api_key:
-        st.warning("⚠️ Groq Key required to continue.")
-        st.stop()
+if "agent" not in st.session_state or force_reinit:
+    if force_reinit: st.toast("🔄 Updating Agent with new Keys...", icon="🔑")
+    st.session_state.agent = AgentBrain(groq_api_key, tavily_api_key, st.session_state.memory_manager)
 
-    st.divider()
-
-    # B. Tuning Knobs
-    st.subheader("🔧 Tuning")
-    chunk_size = st.slider("Chunk Size", 200, 2000, 700, 100)
+# 3. Smart Ingestion Logic
+if uploaded_files:
+    current_state = {"files": frozenset({f.name for f in uploaded_files}), "chunk_size": chunk_size}
     
-    # C. Initialize Backend (With Hot-Swap Support)
-    if "memory" not in st.session_state:
-        st.session_state.memory = MemoryManager()
-        st.session_state.processor = DocumentProcessor(chunk_size=chunk_size)
-        st.session_state.chunk_count = 0
-        st.session_state.active_tavily_key = None # Track which key is currently loaded
-        
-        # Initial Agent Creation
-        st.session_state.agent = AgentBrain(groq_api_key, tavily_api_key, st.session_state.memory)
-        st.session_state.active_tavily_key = tavily_api_key
+    if st.session_state.processed_state != current_state:
+        st.sidebar.warning("⚠️ Pending Changes")
+        # WARNING FIX: Removed 'use_container_width'
+        if st.sidebar.button("⚡ Process Files", type="primary"):
+            processor = DocumentProcessor(chunk_size=chunk_size)
+            with st.status("🏗️ Building Knowledge Base...", expanded=True) as status:
+                splits = []
+                for f in uploaded_files:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                        tmp.write(f.getbuffer())
+                        tmp_path = tmp.name
+                    try: splits.extend(processor.process_files([tmp_path]))
+                    finally: os.remove(tmp_path)
+                
+                st.session_state.memory_manager.clear()
+                st.session_state.memory_manager.ingest_docs(splits, status_container=status)
+                st.session_state.processed_state = current_state
+                status.update(label="✅ Ready!", state="complete", expanded=False)
+                st.rerun()
+    else:
+        st.sidebar.success("✅ System Ready")
 
-    # --- THE FIX: DETECT KEY CHANGE ---
-    # If the user pasted a new key, but the Agent is still using the old one (or None), UPDATE IT.
-    current_key_input = tavily_api_key if tavily_api_key else None
-    
-    if current_key_input != st.session_state.active_tavily_key:
-        with st.spinner("🔄 Updating Agent Capabilities..."):
-            # Re-initialize the Agent with the new Key
-            st.session_state.agent = AgentBrain(groq_api_key, current_key_input, st.session_state.memory)
-            st.session_state.active_tavily_key = current_key_input
-            st.success("✅ Agent upgraded with Web Search!")
-            # Rerun to apply changes immediately
-            st.rerun()
-    # ----------------------------------
+# 4. UI Stats
+if st.session_state.memory_manager.vector_store:
+    render_sidebar_stats(st.session_state.memory_manager.vector_store.index.ntotal)
 
-    if "chunk_count" not in st.session_state:
-        st.session_state.chunk_count = 0
-
-    render_sidebar_stats(st.session_state.chunk_count)
-
-    # E. Document Ingestion
-    st.divider()
-    st.subheader("📂 Knowledge Base")
-    uploaded_files = st.file_uploader("Upload PDFs or Text", accept_multiple_files=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Ingest"):
-            if uploaded_files:
-                with st.spinner("Processing..."):
-                    temp_paths = []
-                    for f in uploaded_files:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{f.name.split('.')[-1]}") as tmp:
-                            tmp.write(f.getvalue())
-                            temp_paths.append(tmp.name)
-                    
-                    st.session_state.processor.splitter._chunk_size = chunk_size
-                    chunks = st.session_state.processor.process_files(temp_paths)
-                    st.session_state.memory.add_documents(chunks)
-                    st.session_state.chunk_count += len(chunks)
-                    
-                    for path in temp_paths: os.remove(path)
-                    st.success(f"✅ Added {len(chunks)} chunks!")
-            else:
-                st.warning("Upload a file first.")
-
-    with col2:
-        if st.button("Clear"):
-            st.session_state.memory.clear()
-            st.session_state.chunk_count = 0
-            st.rerun()
-
-# 3. CHAT INTERFACE
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# 5. Chat Loop
+st.title("🤖 Agentic Brain")
+st.caption("Hybrid RAG • Web Search • Llama-3")
 
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
+    with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🧠"):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask a question..."):
+if prompt := st.chat_input("Ask anything..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.chat_message("user", avatar="🧑‍💻"): st.markdown(prompt)
 
-    with st.chat_message("assistant"):
-        with st.spinner("🤖 Thinking..."):
-            
-            # 1. Ask Agent
-            response, results, tool_used = st.session_state.agent.ask(
-                prompt, 
-                chat_history=st.session_state.messages
-            )
-            
-            # 2. Show Badge
-            if tool_used == "RAG": st.caption("🧠 Source: **Internal Docs**")
-            elif tool_used == "WEB": st.caption(f"🌍 Source: **Web Search** (Tavily)")
-            elif tool_used == "CHAT": st.caption("💬 Source: **Chat**")
+    with st.chat_message("assistant", avatar="🧠"):
+        if not st.session_state.memory_manager.vector_store and not tavily_api_key:
+             st.warning("⚠️ No documents uploaded and no Web Search key provided.")
+             response = "I have no knowledge access."
+        else:
+            with st.status("🤔 Thinking...", expanded=True) as status:
+                response, results, tool = st.session_state.agent.ask(
+                    prompt, 
+                    chat_history=st.session_state.messages,
+                    k=retrieval_k, 
+                    status_container=status
+                )
+                labels = {"RAG": "📚 Documents", "WEB": "🌍 Internet", "CHAT": "💬 Logic"}
+                status.update(label=f"Used Tool: {labels[tool]}", state="complete", expanded=False)
 
             st.markdown(response)
             
-            # 3. Visuals
-            if results:
-                st.divider()
-                st.subheader("🔍 Reasoning Trace")
-                if tool_used == "RAG":
-                    query_vector = st.session_state.memory.get_embedding_model().embed_query(prompt)
-                    for doc, score in results:
-                        doc_vector = st.session_state.memory.get_embedding_model().embed_query(doc.page_content)
-                        page_num = doc.metadata.get('page', 'Unknown')
-                        if isinstance(page_num, int): page_num += 1
-                        render_comparison_chart(doc.page_content, score, doc_vector, query_vector, f"Page {page_num}")
-                elif tool_used == "WEB":
-                    for doc in results:
-                        st.markdown(f"#### 🔗 Source: **{doc.metadata.get('source', 'Web')}**")
-                        st.info(doc.page_content)
+            if tool == "RAG":
+                render_source_badges(results)
+                for i, (doc, score) in enumerate(results):
+                    # Quick embedding for graph
+                    model = st.session_state.memory_manager.get_embedding_model()
+                    render_comparison_chart(
+                        doc.page_content, score, 
+                        model.embed_query(doc.page_content), 
+                        model.embed_query(prompt), 
+                        f"Source {i+1}"
+                    )
 
-            st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": response})
