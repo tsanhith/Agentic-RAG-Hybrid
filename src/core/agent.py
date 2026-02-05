@@ -4,6 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 from tavily import TavilyClient
+import re
 import sys
 
 # Terminal Colors
@@ -58,10 +59,21 @@ class AgentBrain:
         Question: {question}
         """)
 
+        self.rag_relevance_prompt = ChatPromptTemplate.from_template("""
+        Decide if the provided Context is relevant to the Question.
+        Respond with only "YES" or "NO".
+
+        Context: {context}
+        Question: {question}
+        """)
+
         self.chat_prompt = ChatPromptTemplate.from_template("User: {question}\nAssistant:")
 
-    def ask(self, query: str, chat_history: List[dict] = [], k: int = 5, status_container: Any = None) -> Tuple[str, List[Document], str]:
+    def ask(self, query: str, chat_history: Optional[List[dict]] = None, k: int = 5, status_container: Any = None) -> Tuple[str, List[Document], str]:
         
+        if chat_history is None:
+            chat_history = []
+
         print(f"\n{Colors.HEADER}=== NEW QUERY ==={Colors.ENDC}")
         print(f"{Colors.BLUE}[Input]:{Colors.ENDC} {query}")
 
@@ -80,10 +92,10 @@ class AgentBrain:
             
             # Step 1: Check if it's purely conversational (Hi, Hello)
             # Simple heuristic: Short greetings usually don't need data.
-            greetings = ["hi", "hello", "hey", "good morning", "thanks"]
-            if refined_query.lower() in greetings:
-                 print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Greeting detected. Skipping DB.")
-                 return self._run_chat(refined_query, status_container), [], "CHAT"
+            normalized_query = self._normalize_query(refined_query)
+            if self._is_small_talk(normalized_query):
+                print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Small talk detected. Skipping DB.")
+                return self._run_chat(refined_query, status_container), [], "CHAT"
 
             # Step 2: Try RAG (Always First)
             if status_container: status_container.write(f"📚 Searching Knowledge Base...")
@@ -91,7 +103,7 @@ class AgentBrain:
             # We use a slightly looser threshold (1.5) to catch 'maybe' relevant docs
             results = self.memory.search(refined_query, k=k, score_threshold=1.5)
             
-            if results:
+            if self._should_use_rag(results) and self._is_rag_relevant(refined_query, results):
                 print(f"{Colors.GREEN}[RAG]:{Colors.ENDC} Found {len(results)} potential docs.")
                 context_text = "\n\n".join([doc.page_content for doc, score in results])
                 
@@ -109,6 +121,13 @@ class AgentBrain:
                 print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} No relevant docs found. Switching to WEB.")
 
             # Step 3: Fallback to Web (if RAG failed)
+            if self._requires_fresh_info(normalized_query):
+                if self.tavily:
+                    print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Fresh info requested. Using Web.")
+                    return self._run_web_search(refined_query, status_container)
+                print(f"{Colors.FAIL}[Fallback]:{Colors.ENDC} Fresh info requested but no Web Key. Using Chat.")
+                return self._run_chat(refined_query, status_container, prefix="ℹ️ **Note:** Live data unavailable.\n\n"), [], "CHAT"
+
             if self.tavily:
                 return self._run_web_search(refined_query, status_container)
             else:
@@ -147,3 +166,56 @@ class AgentBrain:
         if status_container: status_container.write("💬 Thinking...")
         response = (self.chat_prompt | self.chat_llm | StrOutputParser()).invoke({"question": query})
         return prefix + response
+
+    def _normalize_query(self, query: str) -> str:
+        cleaned = re.sub(r"[^\w\s]", "", query)
+        return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+    def _is_small_talk(self, normalized_query: str) -> bool:
+        if not normalized_query:
+            return True
+
+        conversational_patterns = [
+            r"^(hi|hello|hey)( there)?$",
+            r"^good (morning|afternoon|evening)$",
+            r"^(thanks|thank you|thx)$",
+            r"^how are you( doing)?$",
+            r"^whats up$",
+            r"^what is up$",
+        ]
+
+        return any(re.match(pattern, normalized_query) for pattern in conversational_patterns)
+
+    def _requires_fresh_info(self, normalized_query: str) -> bool:
+        freshness_markers = {
+            "latest",
+            "today",
+            "current",
+            "recent",
+            "news",
+            "breaking",
+            "right now",
+            "as of",
+            "updated",
+        }
+        return any(marker in normalized_query for marker in freshness_markers)
+
+    def _is_rag_relevant(self, query: str, results: List[Tuple[Document, float]]) -> bool:
+        context_text = "\n\n".join([doc.page_content for doc, _score in results])
+        relevance = (self.rag_relevance_prompt | self.llm | StrOutputParser()).invoke(
+            {"context": context_text, "question": query}
+        ).strip().upper()
+        return relevance == "YES"
+
+    def _should_use_rag(self, results: List[Tuple[Document, float]], min_context_chars: int = 200, min_doc_chars: int = 50) -> bool:
+        if not results:
+            return False
+
+        total_chars = sum(len(doc.page_content or "") for doc, _score in results)
+        if total_chars < min_context_chars:
+            return False
+
+        if all(len(doc.page_content or "") < min_doc_chars for doc, _score in results):
+            return False
+
+        return True
