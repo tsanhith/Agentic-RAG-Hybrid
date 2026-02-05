@@ -60,8 +60,11 @@ class AgentBrain:
 
         self.chat_prompt = ChatPromptTemplate.from_template("User: {question}\nAssistant:")
 
-    def ask(self, query: str, chat_history: List[dict] = [], k: int = 5, status_container: Any = None) -> Tuple[str, List[Document], str]:
+    def ask(self, query: str, chat_history: Optional[List[dict]] = None, k: int = 5, status_container: Any = None) -> Tuple[str, List[Document], str]:
         
+        if chat_history is None:
+            chat_history = []
+
         print(f"\n{Colors.HEADER}=== NEW QUERY ==={Colors.ENDC}")
         print(f"{Colors.BLUE}[Input]:{Colors.ENDC} {query}")
 
