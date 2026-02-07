@@ -158,6 +158,35 @@ class AgentBrain:
         ]
         return any(phrase in lowered for phrase in subjective_phrases)
 
+    def _needs_web_search(self, query: str) -> bool:
+        lowered = query.lower()
+        web_indicators = [
+            "latest",
+            "recent",
+            "current",
+            "today",
+            "now",
+            "this week",
+            "this month",
+            "this year",
+            "news",
+            "headline",
+            "breaking",
+            "price",
+            "stock",
+            "market",
+            "weather",
+            "score",
+            "result",
+            "election",
+            "poll",
+            "release date",
+            "updates",
+            "schedule",
+            "live",
+        ]
+        return any(indicator in lowered for indicator in web_indicators)
+
     def _answer_single(self, query: str, status_container: Any, k: int) -> Tuple[str, List[Document], str]:
         if self._is_subjective_query(query):
             print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Subjective query detected. Using CHAT.")
@@ -184,6 +213,14 @@ class AgentBrain:
             print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} Docs found but answer missing. Switching to WEB.")
         else:
             print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} No relevant docs found. Switching to WEB.")
+
+        if not self._needs_web_search(query):
+            print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} No web needed. Using CHAT.")
+            return self._run_chat(
+                query,
+                status_container,
+                prefix="ℹ️ **Note:** Not found in documents. Answering from general knowledge.\n\n",
+            ), [], "CHAT"
 
         if self.tavily:
             return self._run_web_search(query, status_container)
