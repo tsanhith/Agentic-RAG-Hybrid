@@ -102,12 +102,8 @@ if prompt := st.chat_input("Ask anything..."):
             st.markdown(response)
             
             if tool in {"RAG", "MIXED"} and results:
-                rag_results = [
-                    item for item in results if isinstance(item, tuple) and len(item) == 2
-                ]
-                if rag_results:
-                    render_source_badges(rag_results)
-                for i, (doc, score) in enumerate(rag_results):
+                render_source_badges(results)
+                for i, (doc, score) in enumerate(results):
                     # Quick embedding for graph
                     model = st.session_state.memory_manager.get_embedding_model()
                     render_comparison_chart(
