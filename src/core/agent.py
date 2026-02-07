@@ -167,6 +167,9 @@ class AgentBrain:
             status_container.write("📚 Searching Knowledge Base...")
 
         results = self.memory.search(query, k=k, score_threshold=1.5)
+        if not results and self.memory.vector_store:
+            print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} No matches under threshold. Falling back to top results.")
+            results = self.memory.search(query, k=k, score_threshold=None)
 
         if results:
             print(f"{Colors.GREEN}[RAG]:{Colors.ENDC} Found {len(results)} potential docs.")
