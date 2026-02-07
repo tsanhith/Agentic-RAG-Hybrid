@@ -80,6 +80,10 @@ class AgentBrain:
             ).strip()
             print(f"{Colors.CYAN}[Refined]:{Colors.ENDC} {refined_query}")
 
+            sub_questions = self._split_compound_query(refined_query)
+            if len(sub_questions) > 1:
+                return self._answer_compound(sub_questions, status_container, k=k)
+
             # ---------------------------------------------------------
             # STRATEGY: RAG FIRST -> FALLBACK TO WEB
             # ---------------------------------------------------------
@@ -91,40 +95,7 @@ class AgentBrain:
                  print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Greeting detected. Skipping DB.")
                  return self._run_chat(refined_query, status_container), [], "CHAT"
 
-            if self._is_subjective_query(refined_query):
-                print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Subjective query detected. Using CHAT.")
-                return self._run_chat(refined_query, status_container), [], "CHAT"
-
-            # Step 2: Try RAG (Always First)
-            if status_container: status_container.write(f"📚 Searching Knowledge Base...")
-            
-            # We use a slightly looser threshold (1.5) to catch 'maybe' relevant docs
-            results = self.memory.search(refined_query, k=k, score_threshold=1.5)
-            
-            if results:
-                print(f"{Colors.GREEN}[RAG]:{Colors.ENDC} Found {len(results)} potential docs.")
-                context_text = "\n\n".join([doc.page_content for doc, score in results])
-                
-                # Ask LLM to validate content
-                response = (self.rag_prompt | self.llm | StrOutputParser()).invoke(
-                    {"context": context_text, "question": refined_query}
-                )
-                
-                if "MISSING_INFO" not in response:
-                    # SUCCESS: Answer found in DB
-                    return response, results, "RAG"
-                else:
-                    print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} Docs found but answer missing. Switching to WEB.")
-            else:
-                print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} No relevant docs found. Switching to WEB.")
-
-            # Step 3: Fallback to Web (if RAG failed)
-            if self.tavily:
-                return self._run_web_search(refined_query, status_container)
-            else:
-                # Fallback to Chat if no Web Key
-                print(f"{Colors.FAIL}[Fallback]:{Colors.ENDC} Web needed but no Key. Using Logic.")
-                return self._run_chat(refined_query, status_container, prefix="ℹ️ **Note:** Not found in documents.\n\n"), [], "CHAT"
+            return self._answer_single(refined_query, status_container, k=k)
 
         except Exception as e:
              return f"⚠️ **System Error:** {str(e)}", [], "CHAT"
@@ -186,3 +157,63 @@ class AgentBrain:
             "harmful",
         ]
         return any(phrase in lowered for phrase in subjective_phrases)
+
+    def _answer_single(self, query: str, status_container: Any, k: int) -> Tuple[str, List[Document], str]:
+        if self._is_subjective_query(query):
+            print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Subjective query detected. Using CHAT.")
+            return self._run_chat(query, status_container), [], "CHAT"
+
+        if status_container:
+            status_container.write("📚 Searching Knowledge Base...")
+
+        results = self.memory.search(query, k=k, score_threshold=1.5)
+
+        if results:
+            print(f"{Colors.GREEN}[RAG]:{Colors.ENDC} Found {len(results)} potential docs.")
+            context_text = "\n\n".join([doc.page_content for doc, score in results])
+
+            response = (self.rag_prompt | self.llm | StrOutputParser()).invoke(
+                {"context": context_text, "question": query}
+            )
+
+            if "MISSING_INFO" not in response:
+                return response, results, "RAG"
+            print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} Docs found but answer missing. Switching to WEB.")
+        else:
+            print(f"{Colors.WARNING}[RAG]:{Colors.ENDC} No relevant docs found. Switching to WEB.")
+
+        if self.tavily:
+            return self._run_web_search(query, status_container)
+
+        print(f"{Colors.FAIL}[Fallback]:{Colors.ENDC} Web needed but no Key. Using Logic.")
+        return self._run_chat(query, status_container, prefix="ℹ️ **Note:** Not found in documents.\n\n"), [], "CHAT"
+
+    def _answer_compound(self, sub_questions: List[str], status_container: Any, k: int) -> Tuple[str, List[Document], str]:
+        responses = []
+        all_docs: List[Document] = []
+        modes: List[str] = []
+
+        for sub_question in sub_questions:
+            response, docs, mode = self._answer_single(sub_question, status_container, k=k)
+            responses.append(f"**{sub_question.strip()}**\n{response}")
+            all_docs.extend(docs)
+            modes.append(mode)
+
+        combined_mode = "RAG" if all(mode == "RAG" for mode in modes) else "MIXED"
+        return "\n\n".join(responses), all_docs, combined_mode
+
+    def _split_compound_query(self, query: str) -> List[str]:
+        cleaned = query.strip()
+        question_parts = [part.strip() for part in cleaned.split("?") if part.strip()]
+        if len(question_parts) > 1:
+            return [part + "?" for part in question_parts]
+
+        lowered = cleaned.lower()
+        if " and " in lowered:
+            wh_words = ["what", "why", "how", "when", "where", "who", "which"]
+            wh_count = sum(1 for word in wh_words if f" {word} " in f" {lowered} ")
+            if wh_count >= 2:
+                left, right = cleaned.split(" and ", 1)
+                return [left.strip(), right.strip()]
+
+        return [cleaned]
