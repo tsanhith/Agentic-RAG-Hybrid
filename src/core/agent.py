@@ -18,6 +18,8 @@ class Colors:
     BOLD = '\033[1m'
 
 class AgentBrain:
+    MAX_SEARCH_QUERY_LENGTH = 400
+
     def __init__(self, groq_api_key: str, tavily_api_key: Optional[str], memory_manager: Any):
         self.memory = memory_manager
         
@@ -40,6 +42,7 @@ class AgentBrain:
 
         self.search_query_prompt = ChatPromptTemplate.from_template("""
         Convert this into a targeted Google search query.
+        Keep it concise and under 350 characters.
         Question: "{question}"
         Search Query:
         """)
@@ -131,6 +134,7 @@ class AgentBrain:
         try:
             # Generate Keywords
             search_query = (self.search_query_prompt | self.llm | StrOutputParser()).invoke({"question": query}).strip()
+            search_query = self._truncate_search_query(search_query)
             print(f"{Colors.BLUE}[Query]:{Colors.ENDC} {search_query}")
             
             results = self.tavily.search(query=search_query, search_depth="basic", max_results=5)
@@ -150,3 +154,9 @@ class AgentBrain:
         if status_container: status_container.write("💬 Thinking...")
         response = (self.chat_prompt | self.chat_llm | StrOutputParser()).invoke({"question": query})
         return prefix + response
+
+    def _truncate_search_query(self, query: str) -> str:
+        if len(query) <= self.MAX_SEARCH_QUERY_LENGTH:
+            return query
+        truncated = query[: self.MAX_SEARCH_QUERY_LENGTH].rsplit(" ", 1)[0]
+        return truncated if truncated else query[: self.MAX_SEARCH_QUERY_LENGTH]
