@@ -91,6 +91,10 @@ class AgentBrain:
                  print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Greeting detected. Skipping DB.")
                  return self._run_chat(refined_query, status_container), [], "CHAT"
 
+            if self._is_subjective_query(refined_query):
+                print(f"{Colors.BOLD}[Strategy]:{Colors.ENDC} Subjective query detected. Using CHAT.")
+                return self._run_chat(refined_query, status_container), [], "CHAT"
+
             # Step 2: Try RAG (Always First)
             if status_container: status_container.write(f"📚 Searching Knowledge Base...")
             
@@ -160,3 +164,25 @@ class AgentBrain:
             return query
         truncated = query[: self.MAX_SEARCH_QUERY_LENGTH].rsplit(" ", 1)[0]
         return truncated if truncated else query[: self.MAX_SEARCH_QUERY_LENGTH]
+
+    def _is_subjective_query(self, query: str) -> bool:
+        lowered = query.lower()
+        subjective_phrases = [
+            "what do you think",
+            "your opinion",
+            "do you believe",
+            "how do you feel",
+            "is it bad",
+            "is it good",
+            "should i",
+            "should we",
+            "morally",
+            "ethically",
+            "religion",
+            "religious",
+            "worship",
+            "idol",
+            "molest",
+            "harmful",
+        ]
+        return any(phrase in lowered for phrase in subjective_phrases)
