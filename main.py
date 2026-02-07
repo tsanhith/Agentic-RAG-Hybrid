@@ -91,12 +91,17 @@ if prompt := st.chat_input("Ask anything..."):
                     k=retrieval_k, 
                     status_container=status
                 )
-                labels = {"RAG": "📚 Documents", "WEB": "🌍 Internet", "CHAT": "💬 Logic"}
-                status.update(label=f"Used Tool: {labels[tool]}", state="complete", expanded=False)
+                labels = {
+                    "RAG": "📚 Documents",
+                    "WEB": "🌍 Internet",
+                    "CHAT": "💬 Logic",
+                    "MIXED": "📚+🌍 Mixed",
+                }
+                status.update(label=f"Used Tool: {labels.get(tool, '🔧 Other')}", state="complete", expanded=False)
 
             st.markdown(response)
             
-            if tool == "RAG":
+            if tool in {"RAG", "MIXED"} and results:
                 render_source_badges(results)
                 for i, (doc, score) in enumerate(results):
                     # Quick embedding for graph
