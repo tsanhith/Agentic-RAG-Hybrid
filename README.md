@@ -14,6 +14,12 @@
 
 ![System Architecture](architecture.png)
 
+### 🧩 Mermaid (Detailed + Easy-to-Understand)
+
+For a more detailed, visually clear architecture (multiple Mermaid views), see:
+
+- **docs/architecture_mermaid.md**
+
 ---
 
 ## 🚀 Overview
