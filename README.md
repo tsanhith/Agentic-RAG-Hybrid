@@ -14,9 +14,6 @@
 
 ### 🧩 Mermaid (Detailed + Easy-to-Understand)
 
-🔗 **Live app (Sources Used):** https://agentic-rag-hybrid.streamlit.app/#sources-used
-
-#### 🌈 High-Level Experience Map (User Journey + System Routing)
 ```mermaid
 flowchart LR
     U([User]) --> UI[Streamlit UI]
@@ -59,7 +56,6 @@ flowchart LR
     UI --> U
 ```
 
-#### 🧩 Detailed Runtime Sequence (Query Execution)
 ```mermaid
 sequenceDiagram
     participant User
@@ -99,7 +95,6 @@ sequenceDiagram
     UI-->>User: Render answer + source badges
 ```
 
-#### 🧱 Component Map (Modules + External Services)
 ```mermaid
 graph TD
     subgraph UI["Streamlit UI"]
@@ -136,7 +131,6 @@ graph TD
     AGENT --> TAVILY
 ```
 
-#### 🔁 Ingestion Pipeline (Document Processing)
 ```mermaid
 flowchart TD
     UP[Upload PDFs] --> TMP[Temp File Save]
@@ -146,7 +140,6 @@ flowchart TD
     BATCH --> FAISS[(FAISS Vector Store)]
 ```
 
-#### 🧠 Decision Policy (Routing Logic)
 ```mermaid
 flowchart TD
     Q[Incoming Question] --> REFINE[Contextualize + refine]
