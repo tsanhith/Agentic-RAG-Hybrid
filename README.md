@@ -10,9 +10,6 @@
 
 ---
 
-## 📸 System Architecture
-
-![System Architecture](architecture.png)
 🔗 **Live App (Sources Used):** https://agentic-rag-hybrid.streamlit.app/#sources-used
 
 ### 1) 🌈 High-Level Experience Map (User Journey + System Routing)
@@ -58,6 +55,7 @@ flowchart LR
     UI --> U
 ```
 
+
 ### 2) 🧩 Detailed Runtime Sequence (Query Execution)
 ```mermaid
 sequenceDiagram
@@ -98,6 +96,7 @@ sequenceDiagram
     UI-->>User: Render answer + source badges
 ```
 
+
 ### 🧩 Mermaid (Detailed)
 ### 3) 🧱 Component Map (Modules + External Services)
 ```mermaid
@@ -136,6 +135,7 @@ graph TD
     AGENT --> TAVILY
 ```
 
+
 For a more detailed, visually clear architecture (multiple Mermaid views), see:
 ### 4) 🔁 Ingestion Pipeline (Document Processing)
 ```mermaid
@@ -146,6 +146,7 @@ flowchart TD
     SPLIT --> BATCH[Batch Embedding]
     BATCH --> FAISS[(FAISS Vector Store)]
 ```
+
 
 - **docs/architecture_mermaid.md**
 ### 5) 🧠 Decision Policy (Routing Logic)
@@ -161,6 +162,7 @@ flowchart TD
     WEBNEED -->|Yes| WEB[Web Search]
     WEBNEED -->|No| CHAT
 ```
+
 
 ---
 
