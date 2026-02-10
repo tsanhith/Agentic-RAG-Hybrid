@@ -6,14 +6,16 @@
 ![Groq](https://img.shields.io/badge/Inference-Groq-orange?style=for-the-badge)
 ![Tavily](https://img.shields.io/badge/Search-Tavily_AI-green?style=for-the-badge)
 
-> **A next-generation Research Assistant that autonomously decides whether to read your documents or search the web.**
+> **A smart Research Assistant that prioritizes your private documents, seamlessly falling back to the web only when your local knowledge is insufficient.**
 
 ---
 
 ## 📸 System Architecture
 
-### 🧩 Mermaid (Detailed + Easy-to-Understand)
+![System Architecture](architecture.png)
+🔗 **Live App (Sources Used):** https://agentic-rag-hybrid.streamlit.app/#sources-used
 
+### 1) 🌈 High-Level Experience Map (User Journey + System Routing)
 ```mermaid
 flowchart LR
     U([User]) --> UI[Streamlit UI]
@@ -56,6 +58,7 @@ flowchart LR
     UI --> U
 ```
 
+### 2) 🧩 Detailed Runtime Sequence (Query Execution)
 ```mermaid
 sequenceDiagram
     participant User
@@ -95,6 +98,8 @@ sequenceDiagram
     UI-->>User: Render answer + source badges
 ```
 
+### 🧩 Mermaid (Detailed)
+### 3) 🧱 Component Map (Modules + External Services)
 ```mermaid
 graph TD
     subgraph UI["Streamlit UI"]
@@ -131,6 +136,8 @@ graph TD
     AGENT --> TAVILY
 ```
 
+For a more detailed, visually clear architecture (multiple Mermaid views), see:
+### 4) 🔁 Ingestion Pipeline (Document Processing)
 ```mermaid
 flowchart TD
     UP[Upload PDFs] --> TMP[Temp File Save]
@@ -140,6 +147,8 @@ flowchart TD
     BATCH --> FAISS[(FAISS Vector Store)]
 ```
 
+- **docs/architecture_mermaid.md**
+### 5) 🧠 Decision Policy (Routing Logic)
 ```mermaid
 flowchart TD
     Q[Incoming Question] --> REFINE[Contextualize + refine]
@@ -201,7 +210,9 @@ The "Agentic" loop ensures reliability:
 
 - Python 3.10+
 - Groq API Key (Free tier available)
+  - Get a free key: https://console.groq.com/keys
 - Tavily API Key (Free tier available)
+  - Get a free key: https://app.tavily.com/home
 
 ### 1. Clone the Repository
 
