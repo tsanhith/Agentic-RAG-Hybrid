@@ -31,6 +31,12 @@ def setup_page():
         with st.expander("🔐 Credentials", expanded=True):
             if "groq_key" not in st.session_state: st.session_state.groq_key = ""
             if "tavily_key" not in st.session_state: st.session_state.tavily_key = ""
+
+            st.caption(
+                "New here? Get free API keys: "
+                "[Groq](https://console.groq.com/keys) · "
+                "[Tavily](https://app.tavily.com/home)"
+            )
             
             groq_api_key = st.text_input("Groq API Key", type="password", key="groq_key_input", value=st.session_state.groq_key)
             tavily_api_key = st.text_input("Tavily API Key", type="password", key="tavily_key_input", value=st.session_state.tavily_key)
