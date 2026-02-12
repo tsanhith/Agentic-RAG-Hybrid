@@ -136,7 +136,7 @@ graph TD
 ```
 
 
-For a more detailed, visually clear architecture (multiple Mermaid views), see:
+For a more detailed, visually clear architecture (multiple Mermaid views), see :
 ### 4) 🔁 Ingestion Pipeline (Document Processing)
 ```mermaid
 flowchart TD
