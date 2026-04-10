@@ -1,5 +1,6 @@
 import streamlit as st
 
+
 def setup_page():
     """
     Configures the Streamlit page layout with the restored Sliders.
@@ -14,77 +15,225 @@ def setup_page():
     # --- CUSTOM CSS ---
     st.markdown("""
     <style>
-        .block-container { padding-top: 2rem; padding-bottom: 2rem; }
-        .stChatMessage { border-radius: 15px; padding: 10px; margin-bottom: 10px; }
-        [data-testid="stChatMessage"]:nth-child(odd) { background-color: rgba(33, 150, 243, 0.1); border: 1px solid rgba(33, 150, 243, 0.2); }
-        [data-testid="stChatMessage"]:nth-child(even) { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
-        footer {visibility: hidden;}
-        #MainMenu {visibility: hidden;}
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+        :root {
+            --ui-bg-top: #eef6ff;
+            --ui-bg-bottom: #f7fbff;
+            --ui-accent: #0f766e;
+            --ui-accent-strong: #0a5f57;
+            --ui-panel: rgba(255, 255, 255, 0.86);
+            --ui-border: rgba(15, 118, 110, 0.20);
+            --ui-text: #0f172a;
+            --ui-muted: #475569;
+        }
+
+        html, body, [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(circle at 15% 0%, rgba(38, 198, 218, 0.16), transparent 38%),
+                radial-gradient(circle at 90% 5%, rgba(56, 189, 248, 0.12), transparent 40%),
+                linear-gradient(180deg, var(--ui-bg-top), var(--ui-bg-bottom));
+            color: var(--ui-text);
+        }
+
+        [data-testid="stAppViewContainer"] * {
+            font-family: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
+        }
+
+        .block-container {
+            padding-top: 1.6rem;
+            padding-bottom: 2rem;
+            max-width: 1180px;
+            animation: fadeUp 0.45s ease-out;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1, h2, h3 {
+            font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+            letter-spacing: -0.02em;
+            color: #0b1220;
+        }
+
+        [data-testid="stSidebar"] {
+            background: linear-gradient(175deg, #0f172a, #111827 40%, #1f2937 100%);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        [data-testid="stSidebar"] * {
+            color: #e2e8f0;
+        }
+
+        [data-testid="stSidebar"] .stTextInput input {
+            background: rgba(255, 255, 255, 0.09);
+            border: 1px solid rgba(148, 163, 184, 0.40);
+        }
+
+        [data-testid="stSidebar"] .stFileUploader > div {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px dashed rgba(148, 163, 184, 0.55);
+            border-radius: 12px;
+        }
+
+        [data-testid="stSidebar"] .stButton > button {
+            border-radius: 10px;
+            border: 1px solid rgba(125, 211, 252, 0.35);
+            background: linear-gradient(120deg, #0f766e, #0e7490);
+            color: #ecfeff;
+            font-weight: 600;
+        }
+
+        .hero-shell {
+            background: linear-gradient(135deg, rgba(14, 116, 144, 0.10), rgba(15, 118, 110, 0.14));
+            border: 1px solid var(--ui-border);
+            border-radius: 18px;
+            padding: 1rem 1.2rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 8px 22px rgba(2, 132, 199, 0.12);
+        }
+
+        .hero-kicker {
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--ui-accent);
+            margin-bottom: 0.1rem;
+        }
+
+        .hero-title {
+            font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #111827;
+            margin: 0;
+        }
+
+        .hero-subtitle {
+            margin: 0.35rem 0 0;
+            color: var(--ui-muted);
+            font-size: 0.95rem;
+        }
+
+        [data-testid="stChatMessage"] {
+            border-radius: 16px;
+            padding: 0.65rem 0.9rem;
+            margin-bottom: 0.85rem;
+            border: 1px solid transparent;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+        }
+
+        [data-testid="stChatMessage"]:nth-of-type(odd) {
+            background: rgba(14, 116, 144, 0.12);
+            border-color: rgba(14, 116, 144, 0.24);
+        }
+
+        [data-testid="stChatMessage"]:nth-of-type(even) {
+            background: rgba(255, 255, 255, 0.88);
+            border-color: rgba(148, 163, 184, 0.22);
+        }
+
+        .tool-pill {
+            display: inline-block;
+            margin-top: 0.45rem;
+            padding: 0.28rem 0.56rem;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 118, 110, 0.35);
+            color: var(--ui-accent-strong);
+            font-size: 0.78rem;
+            font-weight: 600;
+            background: rgba(15, 118, 110, 0.10);
+        }
+
+        .soft-divider {
+            height: 1px;
+            border: 0;
+            background: linear-gradient(90deg, transparent, rgba(100, 116, 139, 0.34), transparent);
+            margin: 0.6rem 0 1rem;
+        }
+
+        footer { visibility: hidden; }
+        #MainMenu { visibility: hidden; }
     </style>
     """, unsafe_allow_html=True)
 
     # Sidebar
     with st.sidebar:
-        st.markdown("## 🧠 **Agent Control**")
+        st.markdown("## Agent Control")
+        st.caption("Configure keys, load documents, and tune retrieval.")
         
         # Configuration
-        with st.expander("🔐 Credentials", expanded=True):
-            if "groq_key" not in st.session_state: st.session_state.groq_key = ""
-            if "tavily_key" not in st.session_state: st.session_state.tavily_key = ""
+        with st.expander("Credentials", expanded=True):
+            if "groq_key" not in st.session_state:
+                st.session_state.groq_key = ""
+            if "tavily_key" not in st.session_state:
+                st.session_state.tavily_key = ""
 
-            st.caption(
-                "New here? Get free API keys: "
-                "[Groq](https://console.groq.com/keys) · "
-                "[Tavily](https://app.tavily.com/home)"
-            )
+            st.caption("Get free keys from [Groq](https://console.groq.com/keys) and [Tavily](https://app.tavily.com/home).")
             
-            groq_api_key = st.text_input("Groq API Key", type="password", key="groq_key_input", value=st.session_state.groq_key)
-            tavily_api_key = st.text_input("Tavily API Key", type="password", key="tavily_key_input", value=st.session_state.tavily_key)
+            groq_api_key = st.text_input(
+                "Groq API Key",
+                type="password",
+                key="groq_key_input",
+                value=st.session_state.groq_key,
+                placeholder="gsk_...",
+            )
+            tavily_api_key = st.text_input(
+                "Tavily API Key (optional)",
+                type="password",
+                key="tavily_key_input",
+                value=st.session_state.tavily_key,
+                placeholder="tvly-...",
+            )
             
             st.session_state.groq_key = groq_api_key
             st.session_state.tavily_key = tavily_api_key
 
-        st.markdown("---")
+        st.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
         
         # Knowledge Base
-        st.markdown("### 📂 Data Source")
+        st.markdown("### Data Source")
         uploaded_files = st.file_uploader(
-            "Upload Documents (PDF)", 
-            type=["pdf"], 
-            accept_multiple_files=True
+            "Upload PDF documents",
+            type=["pdf"],
+            accept_multiple_files=True,
+            help="Use one or multiple PDFs to build your local knowledge base.",
         )
 
         # --- RESTORED SLIDERS ---
-        st.markdown("### ⚙️ Brain Tuning")
+        st.markdown("### Brain Tuning")
         
         # Slider 1: Retrieval Depth (Top K)
         retrieval_k = st.slider(
-            "Retrieval Depth (Chunks)", 
-            min_value=1, 
-            max_value=10, 
+            "Retrieval Depth (Chunks)",
+            min_value=1,
+            max_value=10,
             value=5,
-            help="How many document chunks to read."
+            help="Higher depth improves recall but can add latency.",
         )
         
         # Slider 2: Chunk Size
         chunk_size = st.slider(
-            "Chunk Size (Characters)", 
-            min_value=200, 
-            max_value=2000, 
-            value=1000, 
+            "Chunk Size (Characters)",
+            min_value=200,
+            max_value=2000,
+            value=1000,
             step=100,
-            help="Small = Facts. Large = Context."
+            help="Smaller chunks are precise; larger chunks preserve context.",
         )
 
         # Memory Management
-        st.markdown("---")
-        if st.button("🗑️ Reset Brain", type="secondary"):
+        st.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
+        if st.button("Reset Brain", type="secondary", use_container_width=True):
             if "memory_manager" in st.session_state:
                 st.session_state.memory_manager.clear()
             st.session_state.messages = []
             if "processed_state" in st.session_state:
                 del st.session_state["processed_state"]
-            st.toast("Brain memory wiped!", icon="🧹")
+            st.toast("Brain memory wiped.")
             st.rerun()
 
     return uploaded_files, groq_api_key, tavily_api_key, retrieval_k, chunk_size
