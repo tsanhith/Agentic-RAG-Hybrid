@@ -12,7 +12,17 @@ from src.core.agent import AgentBrain
 uploaded_files, groq_api_key, tavily_api_key, retrieval_k, chunk_size = setup_page()
 
 if not groq_api_key:
-    st.info("👋 Welcome! Please enter your **Groq API Key** in the sidebar to begin.")
+    st.markdown(
+        """
+        <section class="hero-shell">
+            <p class="hero-kicker">Agentic RAG Workspace</p>
+            <h1 class="hero-title">Query your docs with a clean hybrid assistant</h1>
+            <p class="hero-subtitle">Add your Groq key from the sidebar to start chatting with document + web intelligence.</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.info("Please enter your Groq API key in the sidebar to begin.")
     st.stop()
 
 # 2. State Init
@@ -68,8 +78,27 @@ if st.session_state.memory_manager.vector_store:
     render_sidebar_stats(st.session_state.memory_manager.vector_store.index.ntotal)
 
 # 5. Chat Loop
-st.title("🤖 Agentic Brain")
-st.caption("Hybrid RAG • Web Search • Llama-3")
+st.markdown(
+    """
+    <section class="hero-shell">
+        <p class="hero-kicker">Agentic RAG Workspace</p>
+        <h1 class="hero-title">Agentic Brain</h1>
+        <p class="hero-subtitle">Hybrid retrieval across your PDFs and live web search when needed.</p>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
+st.caption("Model: Llama-3.3-70B via Groq")
+
+if not st.session_state.messages:
+    st.markdown("**Try prompts like:**")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.code("Summarize the main argument from my uploaded documents.")
+    with c2:
+        st.code("What are the latest updates on this topic?")
+    with c3:
+        st.code("Compare source evidence and highlight conflicts.")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🧠"):
@@ -81,36 +110,47 @@ if prompt := st.chat_input("Ask anything..."):
 
     with st.chat_message("assistant", avatar="🧠"):
         if not st.session_state.memory_manager.vector_store and not tavily_api_key:
-             st.warning("⚠️ No documents uploaded and no Web Search key provided.")
-             response = "I have no knowledge access."
+            st.warning("No documents uploaded and no Tavily key provided.")
+            response = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
+            tool = "CHAT"
+            results = []
         else:
             with st.status("🤔 Thinking...", expanded=True) as status:
                 response, results, tool = st.session_state.agent.ask(
-                    prompt, 
+                    prompt,
                     chat_history=st.session_state.messages,
-                    k=retrieval_k, 
-                    status_container=status
+                    k=retrieval_k,
+                    status_container=status,
                 )
                 labels = {
-                    "RAG": "📚 Documents",
-                    "WEB": "🌍 Internet",
-                    "CHAT": "💬 Logic",
-                    "MIXED": "📚+🌍 Mixed",
+                    "RAG": "Documents",
+                    "WEB": "Internet",
+                    "CHAT": "Logic",
+                    "MIXED": "Mixed",
                 }
                 status.update(label=f"Used Tool: {labels.get(tool, '🔧 Other')}", state="complete", expanded=False)
 
             st.markdown(response)
-            
-            if tool in {"RAG", "MIXED"} and results:
-                render_source_badges(results)
-                for i, (doc, score) in enumerate(results):
-                    # Quick embedding for graph
-                    model = st.session_state.memory_manager.get_embedding_model()
-                    render_comparison_chart(
-                        doc.page_content, score, 
-                        model.embed_query(doc.page_content), 
-                        model.embed_query(prompt), 
-                        f"Source {i+1}"
-                    )
+
+        labels = {
+            "RAG": "Routed via Documents",
+            "WEB": "Routed via Internet",
+            "CHAT": "Routed via Logic",
+            "MIXED": "Routed via Mixed Mode",
+        }
+        st.markdown(f"<div class='tool-pill'>{labels.get(tool, 'Routed via Other')}</div>", unsafe_allow_html=True)
+
+        if tool in {"RAG", "MIXED"} and results:
+            render_source_badges(results)
+            for i, (doc, score) in enumerate(results):
+                # Quick embedding for graph
+                model = st.session_state.memory_manager.get_embedding_model()
+                render_comparison_chart(
+                    doc.page_content,
+                    score,
+                    model.embed_query(doc.page_content),
+                    model.embed_query(prompt),
+                    f"Source {i+1}",
+                )
 
     st.session_state.messages.append({"role": "assistant", "content": response})
