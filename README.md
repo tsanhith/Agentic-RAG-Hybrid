@@ -6,7 +6,7 @@
 ![Groq](https://img.shields.io/badge/Inference-Groq-orange?style=for-the-badge)
 ![Tavily](https://img.shields.io/badge/Search-Tavily_AI-green?style=for-the-badge)
 
-> **A smart Research Assistant that prioritizes your private documents, seamlessly falling back to the web only when your local knowledge is insufficient.**
+> **A smart Research Assistant that prioritizes your private documents, seamlessly falling back to the web only when your local knowledge is insufficient..!**
 
 ---
 
