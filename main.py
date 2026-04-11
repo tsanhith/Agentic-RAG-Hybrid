@@ -1,12 +1,32 @@
 import streamlit as st
 import os
 import tempfile
+from datetime import datetime
 
 from src.ui.layout import setup_page
 from src.ui.visuals import render_sidebar_stats, render_comparison_chart, render_source_badges
 from src.core.memory import MemoryManager
 from src.core.processing import DocumentProcessor
 from src.core.agent import AgentBrain
+
+
+def build_chat_markdown(messages):
+    if not messages:
+        return "# Agentic Brain Chat Export\n\n_No messages yet._\n"
+
+    lines = [
+        "# Agentic Brain Chat Export",
+        "",
+        f"_Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC_",
+        "",
+    ]
+    for msg in messages:
+        role = "User" if msg.get("role") == "user" else "Assistant"
+        lines.append(f"## {role}")
+        lines.append(msg.get("content", "").strip())
+        lines.append("")
+    return "\n".join(lines)
+
 
 # 1. Setup
 uploaded_files, groq_api_key, tavily_api_key, retrieval_k, chunk_size = setup_page()
@@ -29,6 +49,19 @@ if not groq_api_key:
 if "memory_manager" not in st.session_state: st.session_state.memory_manager = MemoryManager()
 if "messages" not in st.session_state: st.session_state.messages = []
 if "processed_state" not in st.session_state: st.session_state.processed_state = None
+
+# Session tools in sidebar (UI feature)
+st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
+st.sidebar.markdown("### Session")
+st.sidebar.caption(f"Messages: {len(st.session_state.messages)}")
+st.sidebar.download_button(
+    label="Download Chat (.md)",
+    data=build_chat_markdown(st.session_state.messages),
+    file_name=f"agentic_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+    mime="text/markdown",
+    use_container_width=True,
+    disabled=not st.session_state.messages,
+)
 
 # --- HOT RELOAD FIX ---
 # Check if Agent exists. If NOT, create it.
