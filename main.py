@@ -1,13 +1,23 @@
-import streamlit as st
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import List
 
-from src.ui.layout import setup_page
-from src.ui.visuals import render_sidebar_stats, render_comparison_chart, render_source_badges
+import streamlit as st
+
+from src.core.agent import AgentBrain
 from src.core.memory import MemoryManager
 from src.core.processing import DocumentProcessor
-from src.core.agent import AgentBrain
+from src.ui.layout import setup_page
+from src.ui.visuals import render_comparison_chart, render_sidebar_stats, render_source_badges
+
+
+TOOL_LABELS = {
+    "RAG": "Routed via Documents",
+    "WEB": "Routed via Internet",
+    "CHAT": "Routed via Logic",
+    "MIXED": "Routed via Mixed Mode",
+}
 
 
 def build_chat_markdown(messages):
@@ -17,15 +27,168 @@ def build_chat_markdown(messages):
     lines = [
         "# Agentic Brain Chat Export",
         "",
-        f"_Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC_",
+        f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC_",
         "",
     ]
     for msg in messages:
         role = "User" if msg.get("role") == "user" else "Assistant"
         lines.append(f"## {role}")
         lines.append(msg.get("content", "").strip())
+        tool = msg.get("tool")
+        if tool:
+            lines.append(f"_Tool: {TOOL_LABELS.get(tool, tool)}_")
         lines.append("")
     return "\n".join(lines)
+
+
+def _normalize_suggestions(raw_text: str) -> List[str]:
+    suggestions = []
+    seen = set()
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        while line and line[0] in "-*0123456789. )(":
+            line = line[1:].strip()
+        if not line:
+            continue
+        if not line.endswith("?"):
+            line = f"{line.rstrip('.!')}?"
+        if len(line) < 10:
+            continue
+        lowered = line.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        suggestions.append(line)
+        if len(suggestions) == 3:
+            break
+    return suggestions
+
+
+def _default_followups(tool: str) -> List[str]:
+    if tool == "RAG":
+        return [
+            "Can you cite the strongest quote from the document?",
+            "What key details might we have missed here?",
+            "Can you turn this into an actionable checklist?",
+        ]
+    if tool == "WEB":
+        return [
+            "Can you verify this with multiple independent sources?",
+            "What changed most recently about this topic?",
+            "Can you summarize this into a 60-second brief?",
+        ]
+    return [
+        "Can you explain this in simpler terms?",
+        "What are the biggest trade-offs here?",
+        "What should I do next step by step?",
+    ]
+
+
+def generate_followup_suggestions(question: str, answer: str, tool: str) -> List[str]:
+    cache_key = f"{tool}|{question[:180]}|{answer[:260]}"
+    cache = st.session_state.suggestion_cache
+    if cache_key in cache:
+        return cache[cache_key]
+
+    defaults = _default_followups(tool)
+    suggestions = []
+    prompt = f"""
+You are helping a user continue a research conversation.
+Generate exactly 3 short, high-value follow-up questions.
+Rules:
+- Keep each question under 12 words.
+- No numbering, no bullets, no extra text.
+- Questions only.
+
+User question: {question}
+Assistant answer: {answer}
+"""
+    try:
+        raw = st.session_state.agent.chat_llm.invoke(prompt)
+        raw_text = raw.content if hasattr(raw, "content") else str(raw)
+        suggestions = _normalize_suggestions(raw_text)
+    except Exception:
+        suggestions = []
+
+    for default in defaults:
+        if len(suggestions) >= 3:
+            break
+        if default.lower() not in {item.lower() for item in suggestions}:
+            suggestions.append(default)
+
+    suggestions = suggestions[:3]
+    cache[cache_key] = suggestions
+    return suggestions
+
+
+def render_tool_pill(tool: str):
+    st.markdown(f"<div class='tool-pill'>{TOOL_LABELS.get(tool, 'Routed via Other')}</div>", unsafe_allow_html=True)
+
+
+def render_followup_buttons(suggestions: List[str], message_key: str):
+    if not suggestions:
+        return
+    st.markdown("**Suggested follow-up questions**")
+    cols = st.columns(len(suggestions))
+    for i, suggestion in enumerate(suggestions):
+        label = suggestion if len(suggestion) <= 48 else f"{suggestion[:45]}..."
+        if cols[i].button(label, key=f"followup_{message_key}_{i}", use_container_width=True):
+            st.session_state.pending_prompt = suggestion
+            st.rerun()
+
+
+def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user", avatar="🧑‍💻"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant", avatar="🧠"):
+        if not st.session_state.memory_manager.vector_store and not tavily_api_key:
+            st.warning("No documents uploaded and no Tavily key provided.")
+            response = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
+            tool = "CHAT"
+            results = []
+        else:
+            with st.status("🤔 Thinking...", expanded=True) as status:
+                response, results, tool = st.session_state.agent.ask(
+                    prompt,
+                    chat_history=st.session_state.messages,
+                    k=retrieval_k,
+                    status_container=status,
+                )
+                status.update(
+                    label=f"Used Tool: {TOOL_LABELS.get(tool, 'Other').replace('Routed via ', '')}",
+                    state="complete",
+                    expanded=False,
+                )
+
+            st.markdown(response)
+
+        render_tool_pill(tool)
+
+        if tool in {"RAG", "MIXED"} and results:
+            render_source_badges(results)
+            model = st.session_state.memory_manager.get_embedding_model()
+            for i, (doc, score) in enumerate(results):
+                render_comparison_chart(
+                    doc.page_content,
+                    score,
+                    model.embed_query(doc.page_content),
+                    model.embed_query(prompt),
+                    f"Source {i + 1}",
+                )
+
+        suggestions = generate_followup_suggestions(prompt, response, tool)
+        render_followup_buttons(suggestions, f"live_{len(st.session_state.messages)}")
+
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": response,
+            "tool": tool,
+            "suggestions": suggestions,
+        }
+    )
 
 
 # 1. Setup
@@ -46,11 +209,18 @@ if not groq_api_key:
     st.stop()
 
 # 2. State Init
-if "memory_manager" not in st.session_state: st.session_state.memory_manager = MemoryManager()
-if "messages" not in st.session_state: st.session_state.messages = []
-if "processed_state" not in st.session_state: st.session_state.processed_state = None
+if "memory_manager" not in st.session_state:
+    st.session_state.memory_manager = MemoryManager()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "processed_state" not in st.session_state:
+    st.session_state.processed_state = None
+if "suggestion_cache" not in st.session_state:
+    st.session_state.suggestion_cache = {}
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
 
-# Session tools in sidebar (UI feature)
+# Session tools in sidebar
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
 st.sidebar.markdown("### Session")
 st.sidebar.caption(f"Messages: {len(st.session_state.messages)}")
@@ -63,54 +233,51 @@ st.sidebar.download_button(
     disabled=not st.session_state.messages,
 )
 
-# --- HOT RELOAD FIX ---
-# Check if Agent exists. If NOT, create it.
-# If it DOES exist, check if the API keys have changed. If so, recreate it.
+# 3. Agent initialization with key-change support
 force_reinit = False
 if "agent" in st.session_state:
-    # Check if the existing agent has the current Tavily Key
     current_agent_has_tavily = st.session_state.agent.tavily is not None
     user_provided_tavily = bool(tavily_api_key)
-    
-    # If user provided a key but agent doesn't have it -> REINIT
     if user_provided_tavily and not current_agent_has_tavily:
         force_reinit = True
 
 if "agent" not in st.session_state or force_reinit:
-    if force_reinit: st.toast("🔄 Updating Agent with new Keys...", icon="🔑")
+    if force_reinit:
+        st.toast("Updating Agent with new keys.")
     st.session_state.agent = AgentBrain(groq_api_key, tavily_api_key, st.session_state.memory_manager)
 
-# 3. Smart Ingestion Logic
+# 4. Smart ingestion logic
 if uploaded_files:
     current_state = {"files": frozenset({f.name for f in uploaded_files}), "chunk_size": chunk_size}
-    
+
     if st.session_state.processed_state != current_state:
-        st.sidebar.warning("⚠️ Pending Changes")
-        # WARNING FIX: Removed 'use_container_width'
-        if st.sidebar.button("⚡ Process Files", type="primary"):
+        st.sidebar.warning("Pending changes")
+        if st.sidebar.button("Process Files", type="primary", use_container_width=True):
             processor = DocumentProcessor(chunk_size=chunk_size)
-            with st.status("🏗️ Building Knowledge Base...", expanded=True) as status:
+            with st.status("Building Knowledge Base...", expanded=True) as status:
                 splits = []
-                for f in uploaded_files:
+                for file_obj in uploaded_files:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                        tmp.write(f.getbuffer())
+                        tmp.write(file_obj.getbuffer())
                         tmp_path = tmp.name
-                    try: splits.extend(processor.process_files([tmp_path]))
-                    finally: os.remove(tmp_path)
-                
+                    try:
+                        splits.extend(processor.process_files([tmp_path]))
+                    finally:
+                        os.remove(tmp_path)
+
                 st.session_state.memory_manager.clear()
                 st.session_state.memory_manager.ingest_docs(splits, status_container=status)
                 st.session_state.processed_state = current_state
-                status.update(label="✅ Ready!", state="complete", expanded=False)
+                status.update(label="Ready", state="complete", expanded=False)
                 st.rerun()
     else:
-        st.sidebar.success("✅ System Ready")
+        st.sidebar.success("System ready")
 
-# 4. UI Stats
+# 5. UI Stats
 if st.session_state.memory_manager.vector_store:
     render_sidebar_stats(st.session_state.memory_manager.vector_store.index.ntotal)
 
-# 5. Chat Loop
+# 6. Chat UI
 st.markdown(
     """
     <section class="hero-shell">
@@ -133,57 +300,18 @@ if not st.session_state.messages:
     with c3:
         st.code("Compare source evidence and highlight conflicts.")
 
-for msg in st.session_state.messages:
+for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🧠"):
         st.markdown(msg["content"])
+        if msg.get("role") == "assistant":
+            if msg.get("tool"):
+                render_tool_pill(msg["tool"])
+            render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
 
-if prompt := st.chat_input("Ask anything..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="🧑‍💻"): st.markdown(prompt)
+typed_prompt = st.chat_input("Ask anything...")
+queued_prompt = st.session_state.pending_prompt
+st.session_state.pending_prompt = None
+active_prompt = queued_prompt or typed_prompt
 
-    with st.chat_message("assistant", avatar="🧠"):
-        if not st.session_state.memory_manager.vector_store and not tavily_api_key:
-            st.warning("No documents uploaded and no Tavily key provided.")
-            response = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
-            tool = "CHAT"
-            results = []
-        else:
-            with st.status("🤔 Thinking...", expanded=True) as status:
-                response, results, tool = st.session_state.agent.ask(
-                    prompt,
-                    chat_history=st.session_state.messages,
-                    k=retrieval_k,
-                    status_container=status,
-                )
-                labels = {
-                    "RAG": "Documents",
-                    "WEB": "Internet",
-                    "CHAT": "Logic",
-                    "MIXED": "Mixed",
-                }
-                status.update(label=f"Used Tool: {labels.get(tool, '🔧 Other')}", state="complete", expanded=False)
-
-            st.markdown(response)
-
-        labels = {
-            "RAG": "Routed via Documents",
-            "WEB": "Routed via Internet",
-            "CHAT": "Routed via Logic",
-            "MIXED": "Routed via Mixed Mode",
-        }
-        st.markdown(f"<div class='tool-pill'>{labels.get(tool, 'Routed via Other')}</div>", unsafe_allow_html=True)
-
-        if tool in {"RAG", "MIXED"} and results:
-            render_source_badges(results)
-            for i, (doc, score) in enumerate(results):
-                # Quick embedding for graph
-                model = st.session_state.memory_manager.get_embedding_model()
-                render_comparison_chart(
-                    doc.page_content,
-                    score,
-                    model.embed_query(doc.page_content),
-                    model.embed_query(prompt),
-                    f"Source {i+1}",
-                )
-
-    st.session_state.messages.append({"role": "assistant", "content": response})
+if active_prompt:
+    run_prompt(active_prompt, tavily_api_key, retrieval_k)
