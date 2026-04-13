@@ -37,6 +37,11 @@ def build_chat_markdown(messages):
         tool = msg.get("tool")
         if tool:
             lines.append(f"_Tool: {TOOL_LABELS.get(tool, tool)}_")
+        insight = msg.get("insight")
+        if insight:
+            lines.append("")
+            lines.append("### Insight Card")
+            lines.append(insight)
         lines.append("")
     return "\n".join(lines)
 
@@ -121,8 +126,83 @@ Assistant answer: {answer}
     return suggestions
 
 
+def _default_insight(answer: str, tool: str) -> str:
+    confidence = "High" if tool in {"RAG", "MIXED"} else "Medium"
+    return (
+        "### TL;DR\n"
+        f"{answer[:300].strip()}...\n\n"
+        "### Next Best Actions\n"
+        "- Ask for source-specific verification.\n"
+        "- Convert the answer into a step-by-step execution plan.\n"
+        "- Identify any assumptions and validate them.\n\n"
+        "### Risks / Unknowns\n"
+        "- Some details may require fresher external validation.\n"
+        "- Scope or constraints may still be underspecified.\n\n"
+        "### Confidence\n"
+        f"{confidence}\n"
+    )
+
+
+def generate_insight_card(question: str, answer: str, tool: str) -> str:
+    cache_key = f"{tool}|{question[:180]}|{answer[:260]}"
+    cache = st.session_state.insight_cache
+    if cache_key in cache:
+        return cache[cache_key]
+
+    prompt = f"""
+Create a concise executive insight card from this answer.
+Use exactly this markdown structure:
+### TL;DR
+<2 sentences>
+
+### Next Best Actions
+- <action 1>
+- <action 2>
+- <action 3>
+
+### Risks / Unknowns
+- <risk 1>
+- <risk 2>
+
+### Confidence
+<Low/Medium/High with one short reason>
+
+Context:
+User question: {question}
+Answer tool mode: {tool}
+Assistant answer: {answer}
+"""
+    try:
+        raw = st.session_state.agent.chat_llm.invoke(prompt)
+        insight = raw.content.strip() if hasattr(raw, "content") else str(raw).strip()
+    except Exception:
+        insight = _default_insight(answer, tool)
+
+    if "### TL;DR" not in insight:
+        insight = _default_insight(answer, tool)
+
+    cache[cache_key] = insight
+    return insight
+
+
 def render_tool_pill(tool: str):
     st.markdown(f"<div class='tool-pill'>{TOOL_LABELS.get(tool, 'Routed via Other')}</div>", unsafe_allow_html=True)
+
+
+def render_insight_card(insight_markdown: str, message_key: str):
+    if not insight_markdown:
+        return
+    with st.container():
+        st.markdown("<div class='insight-card'><div class='insight-title'>Insight Card</div></div>", unsafe_allow_html=True)
+        st.markdown(insight_markdown)
+        st.download_button(
+            "Download Insight (.md)",
+            data=insight_markdown,
+            file_name=f"insight_{message_key}.md",
+            mime="text/markdown",
+            key=f"insight_download_{message_key}",
+            use_container_width=True,
+        )
 
 
 def render_followup_buttons(suggestions: List[str], message_key: str):
@@ -162,7 +242,7 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
                     expanded=False,
                 )
 
-            st.markdown(response)
+        st.markdown(response)
 
         render_tool_pill(tool)
 
@@ -178,6 +258,11 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
                     f"Source {i + 1}",
                 )
 
+        insight_markdown = ""
+        if st.session_state.auto_insights:
+            insight_markdown = generate_insight_card(prompt, response, tool)
+            render_insight_card(insight_markdown, f"live_{len(st.session_state.messages)}")
+
         suggestions = generate_followup_suggestions(prompt, response, tool)
         render_followup_buttons(suggestions, f"live_{len(st.session_state.messages)}")
 
@@ -186,6 +271,7 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
             "role": "assistant",
             "content": response,
             "tool": tool,
+            "insight": insight_markdown,
             "suggestions": suggestions,
         }
     )
@@ -217,13 +303,22 @@ if "processed_state" not in st.session_state:
     st.session_state.processed_state = None
 if "suggestion_cache" not in st.session_state:
     st.session_state.suggestion_cache = {}
+if "insight_cache" not in st.session_state:
+    st.session_state.insight_cache = {}
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
+if "auto_insights" not in st.session_state:
+    st.session_state.auto_insights = True
 
 # Session tools in sidebar
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
 st.sidebar.markdown("### Session")
 st.sidebar.caption(f"Messages: {len(st.session_state.messages)}")
+st.session_state.auto_insights = st.sidebar.toggle(
+    "Auto Insight Cards",
+    value=st.session_state.auto_insights,
+    help="Generate an executive insight card for each assistant response.",
+)
 st.sidebar.download_button(
     label="Download Chat (.md)",
     data=build_chat_markdown(st.session_state.messages),
@@ -306,6 +401,7 @@ for idx, msg in enumerate(st.session_state.messages):
         if msg.get("role") == "assistant":
             if msg.get("tool"):
                 render_tool_pill(msg["tool"])
+            render_insight_card(msg.get("insight", ""), f"history_{idx}")
             render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
 
 typed_prompt = st.chat_input("Ask anything...")
