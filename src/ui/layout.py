@@ -148,6 +148,25 @@ def setup_page():
             background: rgba(15, 118, 110, 0.10);
         }
 
+        .insight-card {
+            border: 1px solid rgba(14, 116, 144, 0.24);
+            border-radius: 14px;
+            background: linear-gradient(140deg, rgba(255, 255, 255, 0.86), rgba(240, 249, 255, 0.95));
+            box-shadow: 0 6px 16px rgba(14, 116, 144, 0.10);
+            padding: 0.72rem 0.88rem;
+            margin-top: 0.65rem;
+        }
+
+        .insight-title {
+            font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #0e7490;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            margin-bottom: 0.45rem;
+        }
+
         .soft-divider {
             height: 1px;
             border: 0;
