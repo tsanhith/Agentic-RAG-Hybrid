@@ -1,5 +1,7 @@
 import os
 import tempfile
+import io
+import csv
 from datetime import datetime, timezone
 from typing import List
 
@@ -18,6 +20,7 @@ TOOL_LABELS = {
     "CHAT": "Routed via Logic",
     "MIXED": "Routed via Mixed Mode",
 }
+MAX_BATCH_QUESTIONS = 8
 
 
 def build_chat_markdown(messages):
@@ -44,6 +47,63 @@ def build_chat_markdown(messages):
             lines.append(insight)
         lines.append("")
     return "\n".join(lines)
+
+
+def build_batch_markdown(results):
+    if not results:
+        return "# Batch Q&A Report\n\n_No batch results yet._\n"
+    lines = [
+        "# Batch Q&A Report",
+        "",
+        f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC_",
+        "",
+    ]
+    for idx, item in enumerate(results, start=1):
+        lines.append(f"## {idx}. {item['question']}")
+        lines.append("")
+        lines.append(f"**Tool Route:** {TOOL_LABELS.get(item['tool'], item['tool'])}")
+        lines.append("")
+        lines.append(item["answer"])
+        insight = item.get("insight")
+        if insight:
+            lines.append("")
+            lines.append("### Insight Card")
+            lines.append(insight)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def build_batch_csv(results):
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=["question", "tool", "answer", "insight"])
+    writer.writeheader()
+    for item in results:
+        writer.writerow(
+            {
+                "question": item.get("question", ""),
+                "tool": TOOL_LABELS.get(item.get("tool", ""), item.get("tool", "")),
+                "answer": item.get("answer", ""),
+                "insight": item.get("insight", ""),
+            }
+        )
+    return buffer.getvalue()
+
+
+def parse_batch_questions(raw_input: str) -> List[str]:
+    questions = []
+    seen = set()
+    for raw_line in raw_input.splitlines():
+        line = raw_line.strip().strip("-*")
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        questions.append(line)
+        if len(questions) >= MAX_BATCH_QUESTIONS:
+            break
+    return questions
 
 
 def _normalize_suggestions(raw_text: str) -> List[str]:
@@ -217,6 +277,50 @@ def render_followup_buttons(suggestions: List[str], message_key: str):
             st.rerun()
 
 
+def run_batch_questions(questions: List[str], tavily_api_key: str, retrieval_k: int, append_to_chat: bool):
+    batch_results = []
+    with st.status("Running Batch Q&A...", expanded=True) as status:
+        for idx, question in enumerate(questions, start=1):
+            status.write(f"Processing {idx}/{len(questions)}: {question}")
+            if not st.session_state.memory_manager.vector_store and not tavily_api_key:
+                answer = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
+                tool = "CHAT"
+            else:
+                answer, _, tool = st.session_state.agent.ask(
+                    question,
+                    chat_history=[],
+                    k=retrieval_k,
+                    status_container=None,
+                )
+
+            insight = generate_insight_card(question, answer, tool) if st.session_state.auto_insights else ""
+            suggestions = generate_followup_suggestions(question, answer, tool)
+            result = {
+                "question": question,
+                "answer": answer,
+                "tool": tool,
+                "insight": insight,
+                "suggestions": suggestions,
+            }
+            batch_results.append(result)
+
+            if append_to_chat:
+                st.session_state.messages.append({"role": "user", "content": question})
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": answer,
+                        "tool": tool,
+                        "insight": insight,
+                        "suggestions": suggestions,
+                    }
+                )
+
+        status.update(label=f"Batch complete: {len(batch_results)} answers", state="complete", expanded=False)
+
+    st.session_state.batch_results = batch_results
+
+
 def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="🧑‍💻"):
@@ -309,6 +413,12 @@ if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 if "auto_insights" not in st.session_state:
     st.session_state.auto_insights = True
+if "batch_results" not in st.session_state:
+    st.session_state.batch_results = []
+if "batch_questions_input" not in st.session_state:
+    st.session_state.batch_questions_input = ""
+if "batch_append_to_chat" not in st.session_state:
+    st.session_state.batch_append_to_chat = False
 
 # Session tools in sidebar
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
@@ -327,6 +437,31 @@ st.sidebar.download_button(
     use_container_width=True,
     disabled=not st.session_state.messages,
 )
+
+st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
+with st.sidebar.expander("Batch Q&A Lab", expanded=False):
+    st.caption("Run multiple questions at once and export a structured report.")
+    st.text_area(
+        "Questions (one per line)",
+        key="batch_questions_input",
+        height=170,
+        placeholder="What are the top risks in this report?\nSummarize section 2 in bullet points\nWhat should we do next week?",
+    )
+    st.checkbox("Append batch results to chat", key="batch_append_to_chat")
+    st.caption(f"Max {MAX_BATCH_QUESTIONS} questions per run.")
+    if st.button("Run Batch Q&A", type="primary", use_container_width=True):
+        parsed_questions = parse_batch_questions(st.session_state.batch_questions_input)
+        if not parsed_questions:
+            st.warning("Add at least one valid question to run batch mode.")
+        else:
+            run_batch_questions(
+                parsed_questions,
+                tavily_api_key=tavily_api_key,
+                retrieval_k=retrieval_k,
+                append_to_chat=st.session_state.batch_append_to_chat,
+            )
+            st.toast(f"Batch run complete for {len(parsed_questions)} questions.")
+            st.rerun()
 
 # 3. Agent initialization with key-change support
 force_reinit = False
@@ -384,6 +519,39 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.caption("Model: Llama-3.3-70B via Groq")
+
+if st.session_state.batch_results:
+    st.markdown("### Batch Q&A Results")
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Questions", len(st.session_state.batch_results))
+    rag_count = sum(1 for item in st.session_state.batch_results if item.get("tool") == "RAG")
+    web_count = sum(1 for item in st.session_state.batch_results if item.get("tool") == "WEB")
+    b2.metric("Document-Routed", rag_count)
+    b3.metric("Web-Routed", web_count)
+
+    dl1, dl2 = st.columns(2)
+    dl1.download_button(
+        "Download Batch Report (.md)",
+        data=build_batch_markdown(st.session_state.batch_results),
+        file_name=f"batch_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+    dl2.download_button(
+        "Download Batch Data (.csv)",
+        data=build_batch_csv(st.session_state.batch_results),
+        file_name=f"batch_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    for i, item in enumerate(st.session_state.batch_results, start=1):
+        with st.expander(f"{i}. {item['question']}", expanded=False):
+            st.markdown(item["answer"])
+            render_tool_pill(item["tool"])
+            if item.get("insight"):
+                render_insight_card(item["insight"], f"batch_{i}")
+            render_followup_buttons(item.get("suggestions", []), f"batch_{i}")
 
 if not st.session_state.messages:
     st.markdown("**Try prompts like:**")
