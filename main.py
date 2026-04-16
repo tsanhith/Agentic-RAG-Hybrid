@@ -439,29 +439,29 @@ st.sidebar.download_button(
 )
 
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
-with st.sidebar.expander("Batch Q&A Lab", expanded=False):
-    st.caption("Run multiple questions at once and export a structured report.")
-    st.text_area(
-        "Questions (one per line)",
-        key="batch_questions_input",
-        height=170,
-        placeholder="What are the top risks in this report?\nSummarize section 2 in bullet points\nWhat should we do next week?",
-    )
-    st.checkbox("Append batch results to chat", key="batch_append_to_chat")
-    st.caption(f"Max {MAX_BATCH_QUESTIONS} questions per run.")
-    if st.button("Run Batch Q&A", type="primary", use_container_width=True):
-        parsed_questions = parse_batch_questions(st.session_state.batch_questions_input)
-        if not parsed_questions:
-            st.warning("Add at least one valid question to run batch mode.")
-        else:
-            run_batch_questions(
-                parsed_questions,
-                tavily_api_key=tavily_api_key,
-                retrieval_k=retrieval_k,
-                append_to_chat=st.session_state.batch_append_to_chat,
-            )
-            st.toast(f"Batch run complete for {len(parsed_questions)} questions.")
-            st.rerun()
+st.sidebar.markdown("### Batch Q&A Lab")
+st.sidebar.caption("Run multiple questions at once and export a structured report.")
+st.sidebar.text_area(
+    "Questions (one per line)",
+    key="batch_questions_input",
+    height=170,
+    placeholder="What are the top risks in this report?\nSummarize section 2 in bullet points\nWhat should we do next week?",
+)
+st.sidebar.checkbox("Append batch results to chat", key="batch_append_to_chat")
+st.sidebar.caption(f"Max {MAX_BATCH_QUESTIONS} questions per run.")
+if st.sidebar.button("Run Batch Q&A", type="primary", use_container_width=True):
+    parsed_questions = parse_batch_questions(st.session_state.batch_questions_input)
+    if not parsed_questions:
+        st.warning("Add at least one valid question to run batch mode.")
+    else:
+        run_batch_questions(
+            parsed_questions,
+            tavily_api_key=tavily_api_key,
+            retrieval_k=retrieval_k,
+            append_to_chat=st.session_state.batch_append_to_chat,
+        )
+        st.toast(f"Batch run complete for {len(parsed_questions)} questions.")
+        st.rerun()
 
 # 3. Agent initialization with key-change support
 force_reinit = False
