@@ -3,25 +3,54 @@ import pandas as pd
 import altair as alt
 
 
+def normalize_source_results(results):
+    normalized = []
+    for item in results or []:
+        doc = None
+        score = None
+
+        if isinstance(item, tuple) and len(item) >= 2:
+            doc, score = item[0], item[1]
+        else:
+            doc = item
+
+        if doc is None or not hasattr(doc, "page_content"):
+            continue
+
+        if score is not None:
+            try:
+                score = float(score)
+            except (TypeError, ValueError):
+                score = None
+
+        normalized.append((doc, score))
+
+    return normalized
+
+
 def render_sidebar_stats(chunk_count):
     st.sidebar.markdown(f"### Indexed Chunks: {chunk_count}")
     st.sidebar.progress(min(chunk_count / 100, 1.0))
 
 
 def render_source_badges(results):
-    if not results:
+    normalized = normalize_source_results(results)
+    if not normalized:
         return
     st.markdown("### Sources Used")
-    cols = st.columns(len(results))
-    for i, (doc, score) in enumerate(results):
-        confidence = (1.0 / (1.0 + score)) * 100
+    cols = st.columns(len(normalized))
+    for i, (doc, score) in enumerate(normalized):
         source_name = doc.metadata.get("source") or doc.metadata.get("file_name") or "Document"
         with cols[i]:
-            st.metric(
-                label=f"Source {i + 1}",
-                value=f"{confidence:.0f}% match",
-                delta=f"Page {doc.metadata.get('page', '?')}",
-            )
+            if score is None:
+                st.metric(label=f"Source {i + 1}", value="Context", delta=f"Page {doc.metadata.get('page', '?')}")
+            else:
+                confidence = (1.0 / (1.0 + score)) * 100
+                st.metric(
+                    label=f"Source {i + 1}",
+                    value=f"{confidence:.0f}% match",
+                    delta=f"Page {doc.metadata.get('page', '?')}",
+                )
             st.caption(source_name[:48])
 
 

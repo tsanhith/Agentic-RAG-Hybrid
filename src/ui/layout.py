@@ -36,6 +36,25 @@ def setup_page():
             color: var(--ui-text);
         }
 
+        [data-testid="stMain"] {
+            background: transparent;
+        }
+
+        [data-testid="stMain"] p,
+        [data-testid="stMain"] li,
+        [data-testid="stMain"] label,
+        [data-testid="stMain"] span,
+        [data-testid="stMain"] [data-testid="stMarkdownContainer"] * {
+            color: var(--ui-text) !important;
+        }
+
+        [data-testid="stMain"] h1,
+        [data-testid="stMain"] h2,
+        [data-testid="stMain"] h3,
+        [data-testid="stMain"] h4 {
+            color: #0b1220 !important;
+        }
+
         [data-testid="stAppViewContainer"] * {
             font-family: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
         }
@@ -86,6 +105,29 @@ def setup_page():
             font-weight: 600;
         }
 
+        [data-testid="stSidebar"] .stDownloadButton > button {
+            border-radius: 10px;
+            border: 1px solid rgba(125, 211, 252, 0.35);
+            background: linear-gradient(120deg, #0f766e, #0e7490);
+            color: #ecfeff;
+            font-weight: 600;
+        }
+
+        [data-testid="stMain"] .stButton > button,
+        [data-testid="stMain"] .stDownloadButton > button {
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a !important;
+            font-weight: 600;
+        }
+
+        [data-testid="stMain"] .stButton > button:hover,
+        [data-testid="stMain"] .stDownloadButton > button:hover {
+            border-color: #0e7490;
+            color: #0e7490 !important;
+        }
+
         .hero-shell {
             background: linear-gradient(135deg, rgba(14, 116, 144, 0.10), rgba(15, 118, 110, 0.14));
             border: 1px solid var(--ui-border);
@@ -122,18 +164,30 @@ def setup_page():
             border-radius: 16px;
             padding: 0.65rem 0.9rem;
             margin-bottom: 0.85rem;
-            border: 1px solid transparent;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+            border: 1px solid #dbe2ea;
+            background: #ffffff;
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
         }
 
-        [data-testid="stChatMessage"]:nth-of-type(odd) {
-            background: rgba(14, 116, 144, 0.12);
-            border-color: rgba(14, 116, 144, 0.24);
+        [data-testid="stChatMessage"] p,
+        [data-testid="stChatMessage"] li,
+        [data-testid="stChatMessage"] span,
+        [data-testid="stChatMessage"] strong {
+            color: #0f172a !important;
         }
 
-        [data-testid="stChatMessage"]:nth-of-type(even) {
-            background: rgba(255, 255, 255, 0.88);
-            border-color: rgba(148, 163, 184, 0.22);
+        [data-testid="stChatInput"] textarea {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 10px !important;
+        }
+
+        [data-testid="stTextArea"] textarea {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 10px !important;
         }
 
         .tool-pill {
@@ -151,7 +205,7 @@ def setup_page():
         .insight-card {
             border: 1px solid rgba(14, 116, 144, 0.24);
             border-radius: 14px;
-            background: linear-gradient(140deg, rgba(255, 255, 255, 0.86), rgba(240, 249, 255, 0.95));
+            background: linear-gradient(140deg, #ffffff, #f8fdff);
             box-shadow: 0 6px 16px rgba(14, 116, 144, 0.10);
             padding: 0.72rem 0.88rem;
             margin-top: 0.65rem;
