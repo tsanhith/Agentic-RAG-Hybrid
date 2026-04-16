@@ -7,13 +7,7 @@
 ![FAISS](https://img.shields.io/badge/Vector_DB-FAISS-10b981?style=for-the-badge)
 ![CI](https://img.shields.io/badge/CI-GitHub_Actions-111827?style=for-the-badge&logo=githubactions&logoColor=white)
 
-An agentic research assistant that combines:
-- **Private-document RAG** (PDF ingestion + semantic retrieval)
-- **Live web fallback** (Tavily search when local context is insufficient)
-- **Reasoning UX** (follow-up question chips + AI insight cards)
-- **Productivity layer** (Batch Q&A lab + report exports)
-
-Live app: [agentic-rag-hybrid.streamlit.app](https://agentic-rag-hybrid.streamlit.app/#sources-used)
+> **A smart Research Assistant that prioritizes your private documents, seamlessly falling back to the web only when your local knowledge is insufficient..!**
 
 ---
 
