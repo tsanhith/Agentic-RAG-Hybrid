@@ -11,7 +11,12 @@ from src.core.agent import AgentBrain
 from src.core.memory import MemoryManager
 from src.core.processing import DocumentProcessor
 from src.ui.layout import setup_page
-from src.ui.visuals import render_comparison_chart, render_sidebar_stats, render_source_badges
+from src.ui.visuals import (
+    normalize_source_results,
+    render_comparison_chart,
+    render_sidebar_stats,
+    render_source_badges,
+)
 
 
 TOOL_LABELS = {
@@ -351,9 +356,11 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
         render_tool_pill(tool)
 
         if tool in {"RAG", "MIXED"} and results:
-            render_source_badges(results)
+            normalized_results = normalize_source_results(results)
+            render_source_badges(normalized_results)
             model = st.session_state.memory_manager.get_embedding_model()
-            for i, (doc, score) in enumerate(results):
+            scored_results = [(doc, score) for doc, score in normalized_results if score is not None]
+            for i, (doc, score) in enumerate(scored_results):
                 render_comparison_chart(
                     doc.page_content,
                     score,
@@ -361,6 +368,8 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
                     model.embed_query(prompt),
                     f"Source {i + 1}",
                 )
+            if normalized_results and not scored_results:
+                st.caption("Some sources are web/context snippets, so similarity charts are unavailable for this response.")
 
         insight_markdown = ""
         if st.session_state.auto_insights:
