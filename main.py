@@ -28,6 +28,10 @@ TOOL_LABELS = {
 MAX_BATCH_QUESTIONS = 8
 
 
+def make_message_id(prefix: str = "msg") -> str:
+    return f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+
 def build_chat_markdown(messages):
     if not messages:
         return "# Agentic Brain Chat Export\n\n_No messages yet._\n"
@@ -50,6 +54,32 @@ def build_chat_markdown(messages):
             lines.append("")
             lines.append("### Insight Card")
             lines.append(insight)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def build_favorites_markdown(favorites):
+    if not favorites:
+        return "# Favorites Library\n\n_No saved answers yet._\n"
+
+    lines = [
+        "# Favorites Library",
+        "",
+        f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC_",
+        "",
+    ]
+    for idx, item in enumerate(favorites, start=1):
+        lines.append(f"## {idx}. {item.get('question') or 'Saved Answer'}")
+        lines.append("")
+        lines.append(f"**Saved At:** {item.get('saved_at', '-')}")
+        lines.append(f"**Tool Route:** {TOOL_LABELS.get(item.get('tool', ''), item.get('tool', '-'))}")
+        lines.append("")
+        lines.append(item.get("answer", "").strip())
+        insight = item.get("insight")
+        if insight:
+            lines.append("")
+            lines.append("### Insight Card")
+            lines.append(insight.strip())
         lines.append("")
     return "\n".join(lines)
 
@@ -109,6 +139,24 @@ def parse_batch_questions(raw_input: str) -> List[str]:
         if len(questions) >= MAX_BATCH_QUESTIONS:
             break
     return questions
+
+
+def save_to_favorites(question: str, answer: str, tool: str, insight: str, source_id: str) -> bool:
+    favorites = st.session_state.favorites
+    if any(item.get("source_id") == source_id for item in favorites):
+        return False
+
+    favorites.append(
+        {
+            "source_id": source_id,
+            "question": (question or "Saved Answer").strip(),
+            "answer": (answer or "").strip(),
+            "tool": tool or "CHAT",
+            "insight": (insight or "").strip(),
+            "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        }
+    )
+    return True
 
 
 def _normalize_suggestions(raw_text: str) -> List[str]:
@@ -313,6 +361,8 @@ def run_batch_questions(questions: List[str], tavily_api_key: str, retrieval_k: 
                 st.session_state.messages.append({"role": "user", "content": question})
                 st.session_state.messages.append(
                     {
+                        "message_id": make_message_id("batchchat"),
+                        "question": question,
                         "role": "assistant",
                         "content": answer,
                         "tool": tool,
@@ -381,6 +431,8 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
 
     st.session_state.messages.append(
         {
+            "message_id": make_message_id("chat"),
+            "question": prompt,
             "role": "assistant",
             "content": response,
             "tool": tool,
@@ -428,6 +480,8 @@ if "batch_questions_input" not in st.session_state:
     st.session_state.batch_questions_input = ""
 if "batch_append_to_chat" not in st.session_state:
     st.session_state.batch_append_to_chat = False
+if "favorites" not in st.session_state:
+    st.session_state.favorites = []
 
 # Session tools in sidebar
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
@@ -446,6 +500,28 @@ st.sidebar.download_button(
     use_container_width=True,
     disabled=not st.session_state.messages,
 )
+
+st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
+st.sidebar.markdown("### Favorites Library")
+st.sidebar.caption(f"Saved answers: {len(st.session_state.favorites)}")
+if st.session_state.favorites:
+    st.sidebar.download_button(
+        label="Download Favorites (.md)",
+        data=build_favorites_markdown(st.session_state.favorites),
+        file_name=f"favorites_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+    if st.sidebar.button("Clear Favorites", use_container_width=True):
+        st.session_state.favorites = []
+        st.toast("Favorites cleared.")
+        st.rerun()
+    with st.sidebar.expander("View Saved", expanded=False):
+        for i, item in enumerate(reversed(st.session_state.favorites[-10:]), start=1):
+            st.markdown(f"**{i}. {item.get('question', 'Saved Answer')[:70]}**")
+            st.caption(f"{item.get('saved_at', '')} | {TOOL_LABELS.get(item.get('tool', ''), item.get('tool', 'CHAT'))}")
+else:
+    st.sidebar.caption("Save answers from chat or batch results.")
 
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
 st.sidebar.markdown("### Batch Q&A Lab")
@@ -558,6 +634,17 @@ if st.session_state.batch_results:
         with st.expander(f"{i}. {item['question']}", expanded=False):
             st.markdown(item["answer"])
             render_tool_pill(item["tool"])
+            batch_source_id = item.get("source_id", f"batch_{i}_{abs(hash(item['question'] + item['answer']))}")
+            if st.button("Save to Favorites", key=f"save_batch_{batch_source_id}", use_container_width=True):
+                saved = save_to_favorites(
+                    question=item.get("question", ""),
+                    answer=item.get("answer", ""),
+                    tool=item.get("tool", "CHAT"),
+                    insight=item.get("insight", ""),
+                    source_id=batch_source_id,
+                )
+                st.toast("Saved to favorites." if saved else "Already in favorites.")
+                st.rerun()
             if item.get("insight"):
                 render_insight_card(item["insight"], f"batch_{i}")
             render_followup_buttons(item.get("suggestions", []), f"batch_{i}")
@@ -578,6 +665,17 @@ for idx, msg in enumerate(st.session_state.messages):
         if msg.get("role") == "assistant":
             if msg.get("tool"):
                 render_tool_pill(msg["tool"])
+            message_source_id = msg.get("message_id", f"history_{idx}_{abs(hash(msg.get('content', '')))}")
+            if st.button("Save to Favorites", key=f"save_chat_{message_source_id}"):
+                saved = save_to_favorites(
+                    question=msg.get("question", ""),
+                    answer=msg.get("content", ""),
+                    tool=msg.get("tool", "CHAT"),
+                    insight=msg.get("insight", ""),
+                    source_id=message_source_id,
+                )
+                st.toast("Saved to favorites." if saved else "Already in favorites.")
+                st.rerun()
             render_insight_card(msg.get("insight", ""), f"history_{idx}")
             render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
 
