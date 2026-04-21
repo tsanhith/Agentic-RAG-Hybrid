@@ -2,6 +2,7 @@ import os
 import tempfile
 import io
 import csv
+import hashlib
 from datetime import datetime, timezone
 from typing import List
 
@@ -30,6 +31,11 @@ MAX_BATCH_QUESTIONS = 8
 
 def make_message_id(prefix: str = "msg") -> str:
     return f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+
+def make_stable_id(*parts: str) -> str:
+    joined = "||".join(part or "" for part in parts)
+    return hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
 
 
 def build_chat_markdown(messages):
@@ -305,8 +311,7 @@ def render_tool_pill(tool: str):
 def render_insight_card(insight_markdown: str, message_key: str):
     if not insight_markdown:
         return
-    with st.container():
-        st.markdown("<div class='insight-card'><div class='insight-title'>Insight Card</div></div>", unsafe_allow_html=True)
+    with st.expander("Insight Card", expanded=False):
         st.markdown(insight_markdown)
         st.download_button(
             "Download Insight (.md)",
@@ -321,13 +326,13 @@ def render_insight_card(insight_markdown: str, message_key: str):
 def render_followup_buttons(suggestions: List[str], message_key: str):
     if not suggestions:
         return
-    st.markdown("**Suggested follow-up questions**")
-    cols = st.columns(len(suggestions))
-    for i, suggestion in enumerate(suggestions):
-        label = suggestion if len(suggestion) <= 48 else f"{suggestion[:45]}..."
-        if cols[i].button(label, key=f"followup_{message_key}_{i}", use_container_width=True):
-            st.session_state.pending_prompt = suggestion
-            st.rerun()
+    with st.expander("Suggested follow-up questions", expanded=False):
+        cols = st.columns(len(suggestions))
+        for i, suggestion in enumerate(suggestions):
+            label = suggestion if len(suggestion) <= 48 else f"{suggestion[:45]}..."
+            if cols[i].button(label, key=f"followup_{message_key}_{i}", use_container_width=True):
+                st.session_state.pending_prompt = suggestion
+                st.rerun()
 
 
 def run_batch_questions(questions: List[str], tavily_api_key: str, retrieval_k: int, append_to_chat: bool):
@@ -633,18 +638,24 @@ if st.session_state.batch_results:
     for i, item in enumerate(st.session_state.batch_results, start=1):
         with st.expander(f"{i}. {item['question']}", expanded=False):
             st.markdown(item["answer"])
-            render_tool_pill(item["tool"])
-            batch_source_id = item.get("source_id", f"batch_{i}_{abs(hash(item['question'] + item['answer']))}")
-            if st.button("Save to Favorites", key=f"save_batch_{batch_source_id}", use_container_width=True):
-                saved = save_to_favorites(
-                    question=item.get("question", ""),
-                    answer=item.get("answer", ""),
-                    tool=item.get("tool", "CHAT"),
-                    insight=item.get("insight", ""),
-                    source_id=batch_source_id,
-                )
-                st.toast("Saved to favorites." if saved else "Already in favorites.")
-                st.rerun()
+            batch_source_id = item.get(
+                "source_id",
+                f"batch_{i}_{make_stable_id(item.get('question', ''), item.get('answer', ''))}",
+            )
+            t1, t2 = st.columns([3, 1])
+            with t1:
+                render_tool_pill(item["tool"])
+            with t2:
+                if st.button("Save", key=f"save_batch_{batch_source_id}", use_container_width=True):
+                    saved = save_to_favorites(
+                        question=item.get("question", ""),
+                        answer=item.get("answer", ""),
+                        tool=item.get("tool", "CHAT"),
+                        insight=item.get("insight", ""),
+                        source_id=batch_source_id,
+                    )
+                    st.toast("Saved to favorites." if saved else "Already in favorites.")
+                    st.rerun()
             if item.get("insight"):
                 render_insight_card(item["insight"], f"batch_{i}")
             render_followup_buttons(item.get("suggestions", []), f"batch_{i}")
@@ -663,19 +674,22 @@ for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🧠"):
         st.markdown(msg["content"])
         if msg.get("role") == "assistant":
-            if msg.get("tool"):
-                render_tool_pill(msg["tool"])
-            message_source_id = msg.get("message_id", f"history_{idx}_{abs(hash(msg.get('content', '')))}")
-            if st.button("Save to Favorites", key=f"save_chat_{message_source_id}"):
-                saved = save_to_favorites(
-                    question=msg.get("question", ""),
-                    answer=msg.get("content", ""),
-                    tool=msg.get("tool", "CHAT"),
-                    insight=msg.get("insight", ""),
-                    source_id=message_source_id,
-                )
-                st.toast("Saved to favorites." if saved else "Already in favorites.")
-                st.rerun()
+            message_source_id = msg.get("message_id", f"history_{idx}_{make_stable_id(msg.get('content', ''))}")
+            t1, t2 = st.columns([3, 1])
+            with t1:
+                if msg.get("tool"):
+                    render_tool_pill(msg["tool"])
+            with t2:
+                if st.button("Save", key=f"save_chat_{message_source_id}", use_container_width=True):
+                    saved = save_to_favorites(
+                        question=msg.get("question", ""),
+                        answer=msg.get("content", ""),
+                        tool=msg.get("tool", "CHAT"),
+                        insight=msg.get("insight", ""),
+                        source_id=message_source_id,
+                    )
+                    st.toast("Saved to favorites." if saved else "Already in favorites.")
+                    st.rerun()
             render_insight_card(msg.get("insight", ""), f"history_{idx}")
             render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
 
