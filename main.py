@@ -27,6 +27,12 @@ TOOL_LABELS = {
     "MIXED": "Routed via Mixed Mode",
 }
 MAX_BATCH_QUESTIONS = 8
+RESPONSE_STYLE_GUIDANCE = {
+    "Default": "",
+    "Concise": "Answer in under 120 words. Use short bullets when helpful.",
+    "Detailed": "Provide a detailed, structured answer with key reasoning.",
+    "Action Plan": "Provide a practical step-by-step action plan with priorities.",
+}
 
 
 def make_message_id(prefix: str = "msg") -> str:
@@ -36,6 +42,14 @@ def make_message_id(prefix: str = "msg") -> str:
 def make_stable_id(*parts: str) -> str:
     joined = "||".join(part or "" for part in parts)
     return hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
+
+
+def apply_response_style(question: str) -> str:
+    selected_style = st.session_state.response_style
+    style_instruction = RESPONSE_STYLE_GUIDANCE.get(selected_style, "")
+    if not style_instruction:
+        return question
+    return f"{question}\n\nStyle requirement: {style_instruction}"
 
 
 def build_chat_markdown(messages):
@@ -340,19 +354,20 @@ def run_batch_questions(questions: List[str], tavily_api_key: str, retrieval_k: 
     with st.status("Running Batch Q&A...", expanded=True) as status:
         for idx, question in enumerate(questions, start=1):
             status.write(f"Processing {idx}/{len(questions)}: {question}")
+            styled_question = apply_response_style(question)
             if not st.session_state.memory_manager.vector_store and not tavily_api_key:
                 answer = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
                 tool = "CHAT"
             else:
                 answer, _, tool = st.session_state.agent.ask(
-                    question,
+                    styled_question,
                     chat_history=[],
                     k=retrieval_k,
                     status_container=None,
                 )
 
             insight = generate_insight_card(question, answer, tool) if st.session_state.auto_insights else ""
-            suggestions = generate_followup_suggestions(question, answer, tool)
+            suggestions = generate_followup_suggestions(question, answer, tool) if st.session_state.auto_followups else []
             result = {
                 "question": question,
                 "answer": answer,
@@ -387,6 +402,7 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧠"):
+        styled_prompt = apply_response_style(prompt)
         if not st.session_state.memory_manager.vector_store and not tavily_api_key:
             st.warning("No documents uploaded and no Tavily key provided.")
             response = "I do not have knowledge access yet. Upload PDFs or add Tavily for web search."
@@ -395,7 +411,7 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
         else:
             with st.status("🤔 Thinking...", expanded=True) as status:
                 response, results, tool = st.session_state.agent.ask(
-                    prompt,
+                    styled_prompt,
                     chat_history=st.session_state.messages,
                     k=retrieval_k,
                     status_container=status,
@@ -413,26 +429,31 @@ def run_prompt(prompt: str, tavily_api_key: str, retrieval_k: int):
         if tool in {"RAG", "MIXED"} and results:
             normalized_results = normalize_source_results(results)
             render_source_badges(normalized_results)
-            model = st.session_state.memory_manager.get_embedding_model()
-            scored_results = [(doc, score) for doc, score in normalized_results if score is not None]
-            for i, (doc, score) in enumerate(scored_results):
-                render_comparison_chart(
-                    doc.page_content,
-                    score,
-                    model.embed_query(doc.page_content),
-                    model.embed_query(prompt),
-                    f"Source {i + 1}",
-                )
-            if normalized_results and not scored_results:
-                st.caption("Some sources are web/context snippets, so similarity charts are unavailable for this response.")
+            if st.session_state.show_similarity_charts:
+                model = st.session_state.memory_manager.get_embedding_model()
+                scored_results = [(doc, score) for doc, score in normalized_results if score is not None]
+                prompt_vector = model.embed_query(prompt)
+                for i, (doc, score) in enumerate(scored_results):
+                    render_comparison_chart(
+                        doc.page_content,
+                        score,
+                        model.embed_query(doc.page_content),
+                        prompt_vector,
+                        f"Source {i + 1}",
+                    )
+                if normalized_results and not scored_results:
+                    st.caption("Some sources are web/context snippets, so similarity charts are unavailable for this response.")
+            else:
+                st.caption("Similarity charts are disabled for faster responses.")
 
         insight_markdown = ""
         if st.session_state.auto_insights:
             insight_markdown = generate_insight_card(prompt, response, tool)
             render_insight_card(insight_markdown, f"live_{len(st.session_state.messages)}")
 
-        suggestions = generate_followup_suggestions(prompt, response, tool)
-        render_followup_buttons(suggestions, f"live_{len(st.session_state.messages)}")
+        suggestions = generate_followup_suggestions(prompt, response, tool) if st.session_state.auto_followups else []
+        if st.session_state.auto_followups:
+            render_followup_buttons(suggestions, f"live_{len(st.session_state.messages)}")
 
     st.session_state.messages.append(
         {
@@ -487,6 +508,12 @@ if "batch_append_to_chat" not in st.session_state:
     st.session_state.batch_append_to_chat = False
 if "favorites" not in st.session_state:
     st.session_state.favorites = []
+if "response_style" not in st.session_state:
+    st.session_state.response_style = "Default"
+if "show_similarity_charts" not in st.session_state:
+    st.session_state.show_similarity_charts = False
+if "auto_followups" not in st.session_state:
+    st.session_state.auto_followups = True
 
 # Session tools in sidebar
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
@@ -504,6 +531,24 @@ st.sidebar.download_button(
     mime="text/markdown",
     use_container_width=True,
     disabled=not st.session_state.messages,
+)
+st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
+st.sidebar.markdown("### Response Controls")
+st.session_state.response_style = st.sidebar.selectbox(
+    "Answer style",
+    options=list(RESPONSE_STYLE_GUIDANCE.keys()),
+    index=list(RESPONSE_STYLE_GUIDANCE.keys()).index(st.session_state.response_style),
+    help="Adjust response style without changing the core question.",
+)
+st.session_state.auto_followups = st.sidebar.toggle(
+    "Auto Follow-up Suggestions",
+    value=st.session_state.auto_followups,
+    help="Disable to reduce extra LLM calls and speed up responses.",
+)
+st.session_state.show_similarity_charts = st.sidebar.toggle(
+    "Show Similarity Charts",
+    value=st.session_state.show_similarity_charts,
+    help="Disable for faster responses and lower embedding overhead.",
 )
 
 st.sidebar.markdown('<hr class="soft-divider">', unsafe_allow_html=True)
@@ -658,7 +703,8 @@ if st.session_state.batch_results:
                     st.rerun()
             if item.get("insight"):
                 render_insight_card(item["insight"], f"batch_{i}")
-            render_followup_buttons(item.get("suggestions", []), f"batch_{i}")
+            if item.get("suggestions"):
+                render_followup_buttons(item.get("suggestions", []), f"batch_{i}")
 
 if not st.session_state.messages:
     st.markdown("**Try prompts like:**")
@@ -691,7 +737,8 @@ for idx, msg in enumerate(st.session_state.messages):
                     st.toast("Saved to favorites." if saved else "Already in favorites.")
                     st.rerun()
             render_insight_card(msg.get("insight", ""), f"history_{idx}")
-            render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
+            if msg.get("suggestions"):
+                render_followup_buttons(msg.get("suggestions", []), f"history_{idx}")
 
 typed_prompt = st.chat_input("Ask anything...")
 queued_prompt = st.session_state.pending_prompt
